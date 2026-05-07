@@ -5,8 +5,22 @@ on:
     branches: [ "master", "main", "oracle-*" ]
     # Publish semver tags as releases.
     tags: [ 'v*.*.*' ]
+    # Skip the multi-arch Oracle build (which takes ~10 min) for changes
+    # that can't possibly affect the built image. paths-ignore is OR'd, so
+    # a commit that touches only these files is skipped; a commit that
+    # touches any of them plus a build-relevant file still runs.
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+      - 'docker-run.sh'
   pull_request:
     branches: [ "master", "main", "oracle-*" ]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+      - 'docker-run.sh'
 
 env:
   REGISTRY_DOCKERHUB: docker.io
