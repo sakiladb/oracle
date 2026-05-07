@@ -15,9 +15,38 @@ By default these are created:
 docker run -p 1521:1521 -d sakiladb/oracle:latest
 ```
 
+Or pin to a specific Oracle major version (see all available image tags on
+[Docker Hub](https://hub.docker.com/r/sakiladb/oracle/tags)):
+
+```shell
+docker run -p 1521:1521 -d sakiladb/oracle:23
+```
+
 The image is built on top of [`gvenzl/oracle-free:slim-faststart`](https://hub.docker.com/r/gvenzl/oracle-free)
 and ships with the data directory pre-populated, so the database is ready to
 query within seconds of container start.
+
+### Image tag convention
+
+The image tag tracks the **Oracle Database major version** the image targets,
+matching the convention used by the other `sakiladb/*` repositories
+(`sakiladb/postgres:15`, `sakiladb/mysql:8`, `sakiladb/clickhouse:25`, …).
+
+Releases are cut as semver git tags of the form `vMAJOR.MINOR.PATCH`, where
+`MAJOR` is the Oracle major version. The CI workflow extracts the major
+component into the published Docker tag:
+
+| Git tag    | Docker tag(s) published                          |
+|------------|--------------------------------------------------|
+| `v23.0.0`  | `sakiladb/oracle:23`, `ghcr.io/sakiladb/oracle:23` |
+| `v23.1.0`  | `sakiladb/oracle:23` (overwritten in place)        |
+| `v23.0.1`  | `sakiladb/oracle:23` (overwritten in place)        |
+
+`MINOR` / `PATCH` are reserved for iterations of *this* image (schema fixes,
+packaging tweaks) on the same Oracle major. Bumping them does not change the
+Docker tag — successive `v23.x.y` releases all surface as `:23`. A new Oracle
+major (e.g. a hypothetical Oracle Free 24) would land as `v24.0.0` →
+`sakiladb/oracle:24`.
 
 ## Build Locally
 
