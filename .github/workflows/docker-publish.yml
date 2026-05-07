@@ -15,19 +15,25 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  # Build each platform on its own runner. Building both linux/amd64 and
-  # linux/arm64 in parallel inside one runner OOMs because each Oracle init
-  # wants a ~1.5 GB SGA and the ubuntu-latest runner only has ~7 GB total.
-  # Splitting into a matrix gives each platform its own runner with the full
-  # memory budget.
+  # Build each platform on a native runner of the matching architecture.
+  # Two reasons not to use one ubuntu-latest with both platforms:
+  #   1. Memory: each Oracle init wants a ~1.5 GB SGA, and parallel builds
+  #      for two platforms blow past the ~7 GB ubuntu-latest budget.
+  #   2. QEMU emulation of arm64 on an amd64 host fails Oracle's PMON
+  #      background-process spawn (ORA-00443) - the emulated shared-memory
+  #      and process-spawning paths aren't faithful enough for Oracle.
+  # Native arm64 runners (ubuntu-24.04-arm) are free for public repos and
+  # avoid both problems.
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        platform:
-          - linux/amd64
-          - linux/arm64
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
     permissions:
       contents: read
       packages: write
@@ -43,13 +49,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      # QEMU is only needed when the runner arch differs from the build arch.
-      - name: Set up QEMU
-        if: matrix.platform != 'linux/amd64'
-        uses: docker/setup-qemu-action@v3
-
       - name: Setup Docker buildx
         uses: docker/setup-buildx-action@v3
+
+      # No QEMU step: each matrix entry runs on a native runner of its arch.
 
       # Login is only required when we actually push (i.e. on tag pushes).
       - name: Log into Docker Hub
