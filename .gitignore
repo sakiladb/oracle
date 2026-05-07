@@ -46,3 +46,4 @@ atlassian-ide-plugin.xml
 # macOS / Python build artefacts
 __pycache__/
 *.pyc
+.claude/
