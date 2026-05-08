@@ -113,8 +113,8 @@ to list targets; the most useful are:
 | `make logs`       | Tail container logs                                       |
 | `make convert-data` | Regenerate `2-oracle-sakila-data.sql` from the MySQL dump |
 
-Variables (`IMAGE`, `CONTAINER`, `PORT`, `PDB`, `USER`, `PASSWORD`) can be
-overridden on the command line, e.g. `make run PORT=1522`.
+Variables (`IMAGE`, `CONTAINER`, `PORT`, `PDB`, `DB_USER`, `DB_PASSWORD`) can
+be overridden on the command line, e.g. `make run PORT=1522`.
 
 Or step by step:
 
