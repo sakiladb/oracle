@@ -33,20 +33,74 @@ matching the convention used by the other `sakiladb/*` repositories
 (`sakiladb/postgres:15`, `sakiladb/mysql:8`, `sakiladb/clickhouse:25`, …).
 
 Releases are cut as semver git tags of the form `vMAJOR.MINOR.PATCH`, where
-`MAJOR` is the Oracle major version. The CI workflow extracts the major
-component into the published Docker tag:
+`MAJOR` is the Oracle major version. Each tag push produces both `:<MAJOR>`
+and `:latest` on both registries:
 
-| Git tag   | Docker tag(s) published                            |
-|-----------|----------------------------------------------------|
-| `v23.0.0` | `sakiladb/oracle:23`, `ghcr.io/sakiladb/oracle:23` |
-| `v23.1.0` | `sakiladb/oracle:23` (overwritten in place)        |
-| `v23.0.1` | `sakiladb/oracle:23` (overwritten in place)        |
+| Git tag   | Docker tag(s) published                                       |
+|-----------|---------------------------------------------------------------|
+| `v23.0.0` | `:23`, `:latest` on Docker Hub and GHCR                       |
+| `v23.1.0` | `:23`, `:latest` (both overwritten in place)                  |
+| `v23.0.1` | `:23`, `:latest` (both overwritten in place)                  |
 
 `MINOR` / `PATCH` are reserved for iterations of *this* image (schema fixes,
 packaging tweaks) on the same Oracle major. Bumping them does not change the
 Docker tag — successive `v23.x.y` releases all surface as `:23`. A new Oracle
 major (e.g. a hypothetical Oracle Free 24) would land as `v24.0.0` →
-`sakiladb/oracle:24`.
+`sakiladb/oracle:24` and would also shift `:latest`.
+
+## Releases
+
+Images are published by GitHub Actions
+([`.github/workflows/docker-publish.yml`](.github/workflows/docker-publish.yml))
+on every push of a `vMAJOR.MINOR.PATCH` tag. Pushes to branches and pull
+requests only run a validation build — they don't push anything to a
+registry. Cutting a release is therefore a two-step thing:
+
+```shell
+git tag v23.0.0
+git push origin v23.0.0
+```
+
+What the release pipeline does, in order:
+
+1. **Build natively for both architectures** in parallel — `linux/amd64`
+   on `ubuntu-latest`, `linux/arm64` on `ubuntu-24.04-arm`. (QEMU emulation
+   isn't faithful enough for Oracle's PMON to start.)
+2. **Push by digest** to both Docker Hub and GHCR.
+3. **Merge** the per-platform digests into a multi-arch manifest list,
+   tagged `:<MAJOR>` and `:latest` on each registry.
+4. **Attach SLSA build provenance and an SBOM** as OCI artifacts adjacent
+   to the image.
+5. **Sign with cosign** (keyless, via Sigstore Fulcio + Rekor — no
+   long-lived signing keys). Both the multi-arch index and the per-arch
+   image manifests are signed.
+
+### Registries
+
+| Registry  | Pull URL                       |
+|-----------|--------------------------------|
+| Docker Hub | `docker.io/sakiladb/oracle`    |
+| GHCR       | `ghcr.io/sakiladb/oracle`      |
+
+The two registries publish bit-for-bit identical images (same layer
+digests) — pick whichever has lower latency for your environment.
+
+### Verifying a pulled image
+
+Every published tag carries a Sigstore signature tying it to this
+repository's GitHub Actions workflow. To verify:
+
+```shell
+cosign verify \
+  --certificate-identity-regexp 'https://github.com/sakiladb/oracle/.+' \
+  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+  sakiladb/oracle:23
+```
+
+A successful verification confirms the image was built from this
+repository's workflow on a tag push, and hasn't been tampered with in
+transit. Provenance and SBOM attestations can be inspected with
+`cosign download attestation` if you want the full build record.
 
 ## Build Locally
 
