@@ -3,8 +3,9 @@ name: Docker
 on:
   push:
     branches: [ "master", "oracle-*" ]
-    # Publish semver tags as releases.
-    tags: [ 'v*.*.*' ]
+    # Numeric semver only - rejects typo'd tags like 'vfoo.bar.baz' which
+    # would otherwise trigger a release build that emits no tags.
+    tags: [ 'v[0-9]+.[0-9]+.[0-9]+' ]
     # Skip the multi-arch Oracle build (which takes ~10 min) for changes
     # that can't possibly affect the built image. paths-ignore is OR'd, so
     # a commit that touches only these files is skipped; a commit that
@@ -24,23 +25,34 @@ on:
       - 'Makefile'
       - 'docker-run.sh'
 
+# Don't waste a 10-minute Oracle build on a stale ref. Cancel in-progress
+# runs on the same branch/PR; never cancel an in-flight tag (release) run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   REGISTRY_DOCKERHUB: docker.io
   REGISTRY_GHCR: ghcr.io
-  # github.repository as <account>/<repo>
   IMAGE_NAME: ${{ github.repository }}
+  # Single source of truth for "this run will publish". Steps that push,
+  # log in, or upload artifacts gate on this rather than re-deriving it.
+  IS_RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') && github.event_name != 'pull_request' }}
 
+# Third-party actions are SHA-pinned (with version comment) to defend
+# against tag-move attacks on a compromised action repo. GitHub-owned
+# actions/* are pinned by major - they're considered trusted.
 jobs:
-  # Build each platform on a native runner of the matching architecture.
-  # Two reasons not to use one ubuntu-latest with both platforms:
-  #   1. Memory: each Oracle init wants a ~1.5 GB SGA, and parallel builds
-  #      for two platforms blow past the ~7 GB ubuntu-latest budget.
-  #   2. QEMU emulation of arm64 on an amd64 host fails Oracle's PMON
-  #      background-process spawn (ORA-00443) - the emulated shared-memory
-  #      and process-spawning paths aren't faithful enough for Oracle.
-  # Native arm64 runners (ubuntu-24.04-arm) are free for public repos and
-  # avoid both problems.
   build:
+    # Build each platform on a native runner of the matching architecture.
+    # Two reasons not to use one ubuntu-latest with both platforms:
+    #   1. Memory: each Oracle init wants a ~1.5 GB SGA, and parallel builds
+    #      for two platforms blow past the ~7 GB ubuntu-latest budget.
+    #   2. QEMU emulation of arm64 on an amd64 host fails Oracle's PMON
+    #      background-process spawn (ORA-00443) - the emulated shared-memory
+    #      and process-spawning paths aren't faithful enough for Oracle.
+    # Native arm64 runners (ubuntu-24.04-arm) are free for public repos and
+    # avoid both problems.
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -64,24 +76,28 @@ jobs:
 
       - name: Checkout repository
         uses: actions/checkout@v6
+        with:
+          # We don't push back to git; don't leave the GITHUB_TOKEN sitting
+          # in .git/config where a later step could accidentally use it.
+          persist-credentials: false
 
       - name: Setup Docker buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4.0.0
 
       # No QEMU step: each matrix entry runs on a native runner of its arch.
 
       # Login is only required when we actually push (i.e. on tag pushes).
       - name: Log into Docker Hub
-        if: ${{ startsWith(github.ref, 'refs/tags/v') && github.event_name != 'pull_request' }}
-        uses: docker/login-action@v4
+        if: ${{ env.IS_RELEASE == 'true' }}
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  # v4.1.0
         with:
           registry: ${{ env.REGISTRY_DOCKERHUB }}
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Log into GHCR
-        if: ${{ startsWith(github.ref, 'refs/tags/v') && github.event_name != 'pull_request' }}
-        uses: docker/login-action@v4
+        if: ${{ env.IS_RELEASE == 'true' }}
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  # v4.1.0
         with:
           registry: ${{ env.REGISTRY_GHCR }}
           username: ${{ github.actor }}
@@ -89,8 +105,8 @@ jobs:
 
       # Non-tag push: just validate the build works on this platform.
       - name: Build (validate only)
-        if: ${{ !(startsWith(github.ref, 'refs/tags/v') && github.event_name != 'pull_request') }}
-        uses: docker/build-push-action@v7
+        if: ${{ env.IS_RELEASE != 'true' }}
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f  # v7.1.0
         with:
           context: .
           platforms: ${{ matrix.platform }}
@@ -101,14 +117,18 @@ jobs:
       # Tag push: build and push by digest to both registries. Pushing by
       # digest produces a single-platform image manifest with no tag; the
       # merge job below combines all platform digests into a tagged manifest
-      # list.
+      # list. provenance/sbom attach SLSA + SBOM attestations alongside the
+      # image so downstream consumers (and `cosign verify-attestation`) can
+      # audit the build.
       - name: Build and push by digest
         id: build
-        if: ${{ startsWith(github.ref, 'refs/tags/v') && github.event_name != 'pull_request' }}
-        uses: docker/build-push-action@v7
+        if: ${{ env.IS_RELEASE == 'true' }}
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f  # v7.1.0
         with:
           context: .
           platforms: ${{ matrix.platform }}
+          provenance: mode=max
+          sbom: true
           outputs: |
             type=image,name=${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
             type=image,name=${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
@@ -116,7 +136,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ env.PLATFORM_PAIR }}
 
       - name: Export digest
-        if: ${{ startsWith(github.ref, 'refs/tags/v') && github.event_name != 'pull_request' }}
+        if: ${{ env.IS_RELEASE == 'true' }}
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
         run: |
@@ -124,7 +144,7 @@ jobs:
           touch "/tmp/digests/${DIGEST#sha256:}"
 
       - name: Upload digest
-        if: ${{ startsWith(github.ref, 'refs/tags/v') && github.event_name != 'pull_request' }}
+        if: ${{ env.IS_RELEASE == 'true' }}
         uses: actions/upload-artifact@v7
         with:
           name: digests-${{ env.PLATFORM_PAIR }}
@@ -145,7 +165,7 @@ jobs:
 
     steps:
       - name: Install cosign
-        uses: sigstore/cosign-installer@v4
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
 
       - name: Download digests
         uses: actions/download-artifact@v8
@@ -155,31 +175,36 @@ jobs:
           merge-multiple: true
 
       - name: Setup Docker buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4.0.0
 
       - name: Log into Docker Hub
-        uses: docker/login-action@v4
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  # v4.1.0
         with:
           registry: ${{ env.REGISTRY_DOCKERHUB }}
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Log into GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  # v4.1.0
         with:
           registry: ${{ env.REGISTRY_GHCR }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Each tag push produces both `:<MAJOR>` (e.g. :23) and `:latest`,
+      # so README quick-start commands using `:latest` track the most
+      # recent release. Successive v23.x.y releases overwrite both in
+      # place; a future v24.0.0 would land as :24 and shift :latest.
       - name: Extract Docker metadata
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf  # v6.0.0
         with:
           images: |
             ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}
             ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}
           tags: |
             type=semver,pattern={{major}}
+            type=raw,value=latest
 
       # Each registry needs its own manifest list created from its own
       # per-platform digests (digests are registry-local). Tags from
@@ -205,15 +230,22 @@ jobs:
           # shellcheck disable=SC2086
           docker buildx imagetools create $ghcr_tag_args $ghcr_refs
 
-      - name: Inspect image
+      - name: Inspect Docker Hub image
         env:
           IMAGE: ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
         run: docker buildx imagetools inspect "$IMAGE"
 
+      - name: Inspect GHCR image
+        env:
+          IMAGE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+        run: docker buildx imagetools inspect "$IMAGE"
+
       # Keyless signing via Fulcio + Rekor. TAGS is passed via env (not
       # interpolated into run:) to avoid expression-injection attacks.
+      # --recursive signs the per-arch image manifests as well as the
+      # multi-arch index, so scanners that verify children individually
+      # still see a signature.
       - name: Sign the published Docker images
         env:
-          COSIGN_EXPERIMENTAL: "true"
           TAGS: ${{ steps.meta.outputs.tags }}
-        run: echo "$TAGS" | xargs -I {} cosign sign --yes {}
+        run: echo "$TAGS" | xargs -I {} cosign sign --yes --recursive {}
