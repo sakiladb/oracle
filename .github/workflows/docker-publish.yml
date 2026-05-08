@@ -117,9 +117,14 @@ jobs:
       # Tag push: build and push by digest to both registries. Pushing by
       # digest produces a single-platform image manifest with no tag; the
       # merge job below combines all platform digests into a tagged manifest
-      # list. provenance/sbom attach SLSA + SBOM attestations alongside the
-      # image so downstream consumers (and `cosign verify-attestation`) can
-      # audit the build.
+      # list.
+      #
+      # provenance:false is required: with push-by-digest, buildx wraps each
+      # per-platform image + provenance attestation in a wrapper index, the
+      # action returns the wrapper digest, and `imagetools create` can't
+      # recombine wrapper-of-wrapper indexes into a clean multi-arch list.
+      # Cosign signatures (added in the merge job) cover supply-chain trust
+      # for now; revisit attestations later via a different merge pattern.
       - name: Build and push by digest
         id: build
         if: ${{ env.IS_RELEASE == 'true' }}
@@ -127,8 +132,7 @@ jobs:
         with:
           context: .
           platforms: ${{ matrix.platform }}
-          provenance: mode=max
-          sbom: true
+          provenance: false
           outputs: |
             type=image,name=${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
             type=image,name=${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
@@ -195,6 +199,10 @@ jobs:
       # so README quick-start commands using `:latest` track the most
       # recent release. Successive v23.x.y releases overwrite both in
       # place; a future v24.0.0 would land as :24 and shift :latest.
+      #
+      # `:latest` is added implicitly by metadata-action's flavor.latest=auto
+      # default (any valid semver tag gets :latest); no need for an explicit
+      # type=raw,value=latest, which would emit it twice.
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf  # v6.0.0
@@ -204,7 +212,6 @@ jobs:
             ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}
           tags: |
             type=semver,pattern={{major}}
-            type=raw,value=latest
 
       # Each registry needs its own manifest list created from its own
       # per-platform digests (digests are registry-local). Tags from

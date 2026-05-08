@@ -69,9 +69,7 @@ What the release pipeline does, in order:
 2. **Push by digest** to both Docker Hub and GHCR.
 3. **Merge** the per-platform digests into a multi-arch manifest list,
    tagged `:<MAJOR>` and `:latest` on each registry.
-4. **Attach SLSA build provenance and an SBOM** as OCI artifacts adjacent
-   to the image.
-5. **Sign with cosign** (keyless, via Sigstore Fulcio + Rekor — no
+4. **Sign with cosign** (keyless, via Sigstore Fulcio + Rekor — no
    long-lived signing keys). Both the multi-arch index and the per-arch
    image manifests are signed.
 
@@ -99,8 +97,7 @@ cosign verify \
 
 A successful verification confirms the image was built from this
 repository's workflow on a tag push, and hasn't been tampered with in
-transit. Provenance and SBOM attestations can be inspected with
-`cosign download attestation` if you want the full build record.
+transit.
 
 ## Build Locally
 
