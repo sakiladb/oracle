@@ -2,7 +2,7 @@ name: Docker
 
 on:
   push:
-    branches: [ "master", "main", "oracle-*" ]
+    branches: [ "master", "oracle-*" ]
     # Publish semver tags as releases.
     tags: [ 'v*.*.*' ]
     # Skip the multi-arch Oracle build (which takes ~10 min) for changes
@@ -13,13 +13,15 @@ on:
       - '**.md'
       - '.gitignore'
       - 'LICENSE'
+      - 'Makefile'
       - 'docker-run.sh'
   pull_request:
-    branches: [ "master", "main", "oracle-*" ]
+    branches: [ "master", "oracle-*" ]
     paths-ignore:
       - '**.md'
       - '.gitignore'
       - 'LICENSE'
+      - 'Makefile'
       - 'docker-run.sh'
 
 env:

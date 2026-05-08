@@ -5,9 +5,14 @@
 
 FROM gvenzl/oracle-free:slim-faststart AS builder
 
+# ORACLE_DATABASE=SAKILA tells gvenzl's entrypoint to clone an extra PDB
+# named SAKILA from PDB$SEED at first init and create APP_USER inside it.
+# init-as-sakila.sh then loads the schema/data into SAKILA and drops the
+# now-empty default FREEPDB1 to keep the image lean.
 ENV ORACLE_PASSWORD=p_ssW0rd \
     APP_USER=sakila \
-    APP_USER_PASSWORD=p_ssW0rd
+    APP_USER_PASSWORD=p_ssW0rd \
+    ORACLE_DATABASE=SAKILA
 
 # SQL files live outside /container-entrypoint-initdb.d/ because gvenzl's
 # initdb runner executes *.sql there as SYSDBA against the CDB. Our schema

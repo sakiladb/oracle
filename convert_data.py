@@ -11,7 +11,10 @@
   our schema stores it in VARCHAR2(100).
 
 Usage:
-    python3 convert_data.py ../mysql/2-sakila-data.sql 2-oracle-sakila-data.sql
+    python3 convert_data.py mysql-sakila-data.sql 2-oracle-sakila-data.sql
+
+Input file `mysql-sakila-data.sql` is the upstream MySQL Sakila data dump,
+vendored into this repo so the build is self-contained.
 """
 
 import re
@@ -52,8 +55,8 @@ def main():
 
     with open(input_file, 'r') as f_in, open(output_file, 'w') as f_out:
         f_out.write("-- Sakila Sample Database Data for Oracle 23ai\n")
-        f_out.write("-- Converted from mysql/2-sakila-data.sql\n")
-        f_out.write("-- Run as the sakila user against FREEPDB1.\n\n")
+        f_out.write("-- Converted from mysql-sakila-data.sql\n")
+        f_out.write("-- Run as the sakila user against the SAKILA PDB.\n\n")
 
         # Allow blank lines inside long multi-row INSERTs without sqlplus
         # treating them as statement terminators.

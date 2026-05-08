@@ -5,7 +5,7 @@ example database (by way of [jOOQ](https://www.jooq.org/sakila)).
 See on [Docker Hub](https://hub.docker.com/r/sakiladb/oracle).
 
 By default these are created:
-- pluggable database: `FREEPDB1`
+- pluggable database: `SAKILA`
 - username / password: `sakila` / `p_ssW0rd`
 - schema (= app user): `sakila`
 
@@ -36,11 +36,11 @@ Releases are cut as semver git tags of the form `vMAJOR.MINOR.PATCH`, where
 `MAJOR` is the Oracle major version. The CI workflow extracts the major
 component into the published Docker tag:
 
-| Git tag    | Docker tag(s) published                          |
-|------------|--------------------------------------------------|
-| `v23.0.0`  | `sakiladb/oracle:23`, `ghcr.io/sakiladb/oracle:23` |
-| `v23.1.0`  | `sakiladb/oracle:23` (overwritten in place)        |
-| `v23.0.1`  | `sakiladb/oracle:23` (overwritten in place)        |
+| Git tag   | Docker tag(s) published                            |
+|-----------|----------------------------------------------------|
+| `v23.0.0` | `sakiladb/oracle:23`, `ghcr.io/sakiladb/oracle:23` |
+| `v23.1.0` | `sakiladb/oracle:23` (overwritten in place)        |
+| `v23.0.1` | `sakiladb/oracle:23` (overwritten in place)        |
 
 `MINOR` / `PATCH` are reserved for iterations of *this* image (schema fixes,
 packaging tweaks) on the same Oracle major. Bumping them does not change the
@@ -50,10 +50,31 @@ major (e.g. a hypothetical Oracle Free 24) would land as `v24.0.0` →
 
 ## Build Locally
 
+The included `Makefile` wraps the common docker workflows. Run `make help`
+to list targets; the most useful are:
+
+| Target            | What it does                                              |
+|-------------------|-----------------------------------------------------------|
+| `make build`      | Build the image as `sakiladb/oracle:latest`               |
+| `make run`        | Start the image as a detached container on `:1521`        |
+| `make sqlplus`    | Open `sqlplus` inside the running container as `sakila`   |
+| `make stop`       | Stop and remove the running container                     |
+| `make logs`       | Tail container logs                                       |
+| `make convert-data` | Regenerate `2-oracle-sakila-data.sql` from the MySQL dump |
+
+Variables (`IMAGE`, `CONTAINER`, `PORT`, `PDB`, `USER`, `PASSWORD`) can be
+overridden on the command line, e.g. `make run PORT=1522`.
+
+Or step by step:
+
 ```shell
-python3 convert_data.py ../mysql/2-sakila-data.sql 2-oracle-sakila-data.sql
+# Only needed if mysql-sakila-data.sql changes; 2-oracle-sakila-data.sql is committed.
+python3 convert_data.py mysql-sakila-data.sql 2-oracle-sakila-data.sql
 docker build -t sakiladb/oracle:latest .
 ```
+
+The upstream MySQL data dump is vendored as `mysql-sakila-data.sql` so the
+build is self-contained — no sibling repo checkout required.
 
 ## Ports
 
@@ -65,7 +86,7 @@ Using `sqlplus` from inside the container:
 
 ```shell
 docker exec -it $(docker ps -q -f ancestor=sakiladb/oracle:latest) \
-    sqlplus sakila/p_ssW0rd@//localhost:1521/FREEPDB1 \
+    sqlplus sakila/p_ssW0rd@//localhost:1521/SAKILA \
     <<< "SELECT actor_id, first_name, last_name FROM actor FETCH FIRST 5 ROWS ONLY;"
 ```
 
@@ -84,7 +105,7 @@ Output:
 ## JDBC
 
 ```
-jdbc:oracle:thin:@//localhost:1521/FREEPDB1
+jdbc:oracle:thin:@//localhost:1521/SAKILA
 user=sakila
 password=p_ssW0rd
 ```
