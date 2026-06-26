@@ -95,6 +95,16 @@ ALTER TABLE payment
   ADD CONSTRAINT fk_payment_rental
   FOREIGN KEY (rental_id) REFERENCES rental (rental_id) ON DELETE SET NULL;
 
+-- --- film_text --------------------------------------------------------------
+-- Populate film_text from film. Unlike the other engines, oracle gets NO
+-- full-text index: an Oracle Text CONTEXT index creates ~7 DR$ auxiliary tables
+-- in the schema, which sq would count — breaking the 16-table contract, exactly
+-- like SQLite's FTS5 virtual tables. So, per the family's "schema-visible FTS
+-- stays plain" rule, film_text is a plain populated table here.
+INSERT INTO film_text (film_id, title, description)
+  SELECT film_id, title, description FROM film;
+COMMIT;
+
 -- --- Realign identity columns -----------------------------------------------
 -- Explicit-id INSERTs do not advance the underlying identity sequence, so
 -- without this any subsequent INSERT that omits the id would collide with
@@ -149,6 +159,7 @@ BEGIN
   assert_count('country',   109);
   assert_count('customer',  599);
   assert_count('film',      1000);
+  assert_count('film_text', 1000);
   assert_count('film_actor', 5462);
   assert_count('film_category', 1000);
   assert_count('inventory', 4581);

@@ -174,6 +174,7 @@ password=p_ssW0rd
 | film          | 1000      |
 | film_actor    | 5462      |
 | film_category | 1000      |
+| film_text     | 1000      |
 | inventory     | 4581      |
 | language      | 6         |
 | payment       | 16049     |
@@ -187,22 +188,33 @@ password=p_ssW0rd
 - `staff_list` — staff information with address details
 - `sales_by_store` — total sales grouped by store
 - `sales_by_film_category` — total sales grouped by film category
-- `film_list` — film information with actors (uses `LISTAGG` rather than the
-  MySQL original's `GROUP_CONCAT`)
+- `film_list` — film information with the cast aggregated (`LISTAGG` rather than
+  the MySQL original's `GROUP_CONCAT`)
+- `nicer_but_slower_film_list` — `film_list` with the cast title-cased (`INITCAP`)
+- `actor_info` — per-actor film list grouped by category (nested `LISTAGG`)
 
 ## Notes
 
 - Stored procedures, functions, and triggers are not ported. The MySQL
   originals (`rewards_report`, `get_customer_balance`, `film_in_stock`, etc.)
   are MySQL-specific PL/SQL and out of scope for this image.
-- The `film_text` table (a MySQL FULLTEXT helper populated by triggers) is
-  omitted, matching the other `sakiladb/*` images.
-- The views `actor_info` and `nicer_but_slower_film_list` are omitted — both
-  rely on `GROUP_CONCAT` semantics and correlated subqueries that don't carry
-  over cleanly to Oracle.
+- The `film_text` table is present and populated (parity with the family), but
+  kept **plain** — no Oracle Text full-text index. An Oracle Text `CONTEXT` index
+  creates several `DR$` auxiliary tables in the schema, which would break the
+  uniform 16-table count, so (like SQLite's FTS5) full-text search is omitted here.
 - The `picture` BLOB column is omitted from the `staff` table.
 - The `location` GEOMETRY column is omitted from the `address` table.
 - `film.special_features` is stored as a comma-separated `VARCHAR2(100)`
   rather than a `SET`/array, matching what other ports of Sakila do.
 - Identity column high-water marks are realigned to `MAX(id)+1` after data
   load, so subsequent `INSERT`s without explicit ids will not collide.
+
+## Changelog
+
+### 2026-06-26
+
+- **Reconciled to the consistent sakiladb fixture: 16 tables + 7 views.** Added
+  `film_text` (populated, plain — see Notes) and the `actor_info` (nested `LISTAGG`)
+  and `nicer_but_slower_film_list` (`INITCAP`) views; made `film_list`'s cast order
+  deterministic; `customer_list` / `staff_list` use the canonical `zip code`. The
+  view output is byte-identical to the other variants.

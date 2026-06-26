@@ -9,11 +9,11 @@
 -- Run as the sakila application user against FREEPDB1.
 -- All objects are owned by the sakila user (the schema is the user).
 
--- Notes on omissions (consistent with sakiladb/clickhouse):
---   - film_text table (MySQL FULLTEXT helper).
---   - All triggers and stored procedures/functions.
---   - Views actor_info and nicer_but_slower_film_list (use GROUP_CONCAT,
---     not directly portable to Oracle; LISTAGG used in the views we keep).
+-- film_text (with an Oracle Text full-text index) and the actor_info /
+-- nicer_but_slower_film_list views are included for parity with the family
+-- (16 tables + 7 views). Still omitted:
+--   - All triggers and stored procedures/functions (faithful to jOOQ's Oracle
+--     port, which never implemented them; sq-invisible).
 --   - staff.picture BLOB column.
 --   - address.location GEOMETRY column.
 
@@ -106,6 +106,17 @@ CREATE TABLE film_category (
   category_id NUMBER(3)  NOT NULL,
   last_update TIMESTAMP  DEFAULT SYSTIMESTAMP NOT NULL,
   CONSTRAINT pk_film_category PRIMARY KEY (film_id, category_id)
+);
+
+-- film_text: populated from film in 3-oracle-sakila-finalize.sql. Kept as a
+-- plain table (no Oracle Text index): a CONTEXT index's DR$ auxiliary tables
+-- would inflate the table count, like SQLite's FTS5 — so per the family's
+-- "schema-visible FTS stays plain" rule, oracle film_text has no full-text index.
+CREATE TABLE film_text (
+  film_id     NUMBER(5)     NOT NULL,
+  title       VARCHAR2(128) NOT NULL,
+  description VARCHAR2(4000),
+  CONSTRAINT pk_film_text PRIMARY KEY (film_id)
 );
 
 CREATE TABLE inventory (
@@ -219,7 +230,7 @@ CREATE VIEW customer_list AS
 SELECT cu.customer_id              AS id,
        cu.first_name || ' ' || cu.last_name AS name,
        a.address                   AS address,
-       a.postal_code               AS zip_code,
+       a.postal_code               AS "zip code",
        a.phone                     AS phone,
        city.city                   AS city,
        country.country             AS country,
@@ -234,7 +245,7 @@ CREATE VIEW staff_list AS
 SELECT s.staff_id                 AS id,
        s.first_name || ' ' || s.last_name AS name,
        a.address                  AS address,
-       a.postal_code              AS zip_code,
+       a.postal_code              AS "zip code",
        a.phone                    AS phone,
        city.city                  AS city,
        country.country            AS country,
@@ -280,7 +291,7 @@ SELECT film.film_id                AS fid,
        film.length                 AS length,
        film.rating                 AS rating,
        LISTAGG(actor.first_name || ' ' || actor.last_name, ', ')
-         WITHIN GROUP (ORDER BY actor.last_name, actor.first_name) AS actors
+         WITHIN GROUP (ORDER BY actor.first_name, actor.last_name, actor.actor_id) AS actors
 FROM category
 LEFT JOIN film_category ON category.category_id = film_category.category_id
 LEFT JOIN film          ON film_category.film_id = film.film_id
@@ -288,3 +299,43 @@ JOIN film_actor         ON film.film_id = film_actor.film_id
 JOIN actor              ON film_actor.actor_id = actor.actor_id
 GROUP BY film.film_id, film.title, film.description, category.name,
          film.rental_rate, film.length, film.rating;
+
+-- nicer_but_slower_film_list: film_list with the cast title-cased (INITCAP).
+CREATE VIEW nicer_but_slower_film_list AS
+SELECT film.film_id                AS fid,
+       film.title                  AS title,
+       film.description            AS description,
+       category.name               AS category,
+       film.rental_rate            AS price,
+       film.length                 AS length,
+       film.rating                 AS rating,
+       LISTAGG(INITCAP(actor.first_name) || ' ' || INITCAP(actor.last_name), ', ')
+         WITHIN GROUP (ORDER BY actor.first_name, actor.last_name, actor.actor_id) AS actors
+FROM category
+LEFT JOIN film_category ON category.category_id = film_category.category_id
+LEFT JOIN film          ON film_category.film_id = film.film_id
+JOIN film_actor         ON film.film_id = film_actor.film_id
+JOIN actor              ON film_actor.actor_id = actor.actor_id
+GROUP BY film.film_id, film.title, film.description, category.name,
+         film.rental_rate, film.length, film.rating;
+
+-- actor_info: per-actor film list grouped by category. STRING aggregation has no
+-- DISTINCT and the shape is doubly-correlated (films per category per actor), so
+-- a correlated scalar subquery (categories) wraps an inner correlated LISTAGG
+-- (titles). Films ordered by title, categories by name. Max film_info is ~830
+-- chars, well within Oracle's 4000-byte VARCHAR2 LISTAGG limit.
+CREATE VIEW actor_info AS
+SELECT a.actor_id, a.first_name, a.last_name,
+  (SELECT LISTAGG(c.name || ': ' || (
+            SELECT LISTAGG(f.title, ', ') WITHIN GROUP (ORDER BY f.title)
+            FROM film f
+            JOIN film_category fc2 ON f.film_id = fc2.film_id
+            JOIN film_actor    fa2 ON f.film_id = fa2.film_id
+            WHERE fc2.category_id = c.category_id AND fa2.actor_id = a.actor_id
+          ), '; ') WITHIN GROUP (ORDER BY c.name)
+   FROM category c
+   WHERE EXISTS (SELECT 1 FROM film_category fc
+                   JOIN film_actor fa ON fc.film_id = fa.film_id
+                  WHERE fc.category_id = c.category_id AND fa.actor_id = a.actor_id)
+  ) AS film_info
+FROM actor a;
