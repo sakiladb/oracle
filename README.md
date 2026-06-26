@@ -213,6 +213,9 @@ password=p_ssW0rd
 
 ### 2026-06-26
 
+- **Restored faithful original data** (`v23.0.2`) — the Sakila data is now byte-identical to the
+  original MySQL Sakila: the Unicode accents stripped from international place names (e.g. `Réunion`,
+  `Coruña`) are restored.
 - **Reconciled to the consistent sakiladb fixture: 16 tables + 7 views.** Added
   `film_text` (populated, plain — see Notes) and the `actor_info` (nested `LISTAGG`)
   and `nicer_but_slower_film_list` (`INITCAP`) views; made `film_list`'s cast order
