@@ -1,0 +1,17 @@
+# Keeps the GitHub Actions used by docker-publish.yml up to date. The
+# third-party docker/* and sigstore/* actions are SHA-pinned with a
+# `# vX.Y.Z` comment; Dependabot understands that convention and bumps
+# both the pinned SHA and the comment together in one PR.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    # Batch routine bumps into a single PR to cut review noise; a major
+    # version bump still opens its own PR so it gets a deliberate look.
+    groups:
+      github-actions:
+        update-types:
+          - minor
+          - patch
