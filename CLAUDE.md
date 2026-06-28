@@ -52,7 +52,8 @@ port; `sq`-invisible). `staff.picture` (BLOB) and `address.location` (spatial) a
 *(Oracle-specific.)* `Dockerfile` is a two-stage build that **bakes the Oracle data directory**
 (postgres-style), so the DB is ready within seconds of `docker run` (no init at start):
 
-1. **`builder` stage** — `FROM gvenzl/oracle-free:slim-faststart`. `ORACLE_DATABASE=SAKILA` makes
+1. **`builder` stage** — `FROM gvenzl/oracle-free:${ORACLE_VERSION}-slim-faststart` (pinned, see below).
+   `ORACLE_DATABASE=SAKILA` makes
    gvenzl's entrypoint clone a `SAKILA` PDB + create the app user; `init-as-sakila.sh` then loads the
    schema/data/finalize **as the `sakila` app user** into `SAKILA`, drops the unused seed `FREEPDB1`,
    and shuts down cleanly so the data files are quiesced before the layer is committed.
@@ -64,6 +65,13 @@ port; `sq`-invisible). `staff.picture` (BLOB) and `address.location` (spatial) a
 | `1-oracle-sakila-schema.sql` | Tables (incl. `film_text`), indexes, views. |
 | `2-oracle-sakila-data.sql` | Data (`INSERT … VALUES`), generated from the vendored MySQL dump by `convert_data.py`. |
 | `3-oracle-sakila-finalize.sql` | FKs (added after the data load), `film_text` populate, identity high-water realign, and a **row-count tripwire** that fails the build on drift. |
+
+> **Base image is version-pinned.** `ARG ORACLE_VERSION` (currently `23.26.2`) pins the base to an
+> exact Oracle Free release — the smaller `slim-faststart` variant (FTS-less, see [The dataset](#the-dataset)) —
+> rather than the floating `slim-faststart` tag, so rebuilds are reproducible (a floating tag silently
+> drifted the engine across rebuilds). **To move to a newer Oracle release, bump the `ARG ORACLE_VERSION`
+> default in the `Dockerfile`** (Dependabot may also open this); the published Docker tag stays `23`
+> (the major). Build a specific version locally with `docker build --build-arg ORACLE_VERSION=… .`.
 
 > **Why `init-as-sakila.sh` (not `/container-entrypoint-initdb.d/`):** gvenzl runs `*.sql` there as
 > SYSDBA against the CDB, but the Sakila objects must be owned by the `sakila` app user inside the
