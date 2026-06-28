@@ -72,7 +72,7 @@ port; `sq`-invisible). `staff.picture` (BLOB) and `address.location` (spatial) a
 ### Readiness (HEALTHCHECK)
 
 The final stage declares an explicit `HEALTHCHECK` that runs the gvenzl base's `healthcheck.sh`
-against the **`SAKILA`** PDB (`CMD ["healthcheck.sh", "SAKILA"]`), so the container reports `healthy`
+against the **`SAKILA`** PDB (`CMD ["/opt/oracle/healthcheck.sh", "SAKILA"]`), so the container reports `healthy`
 once that PDB is open and the baked schema is queryable. The base's `slim-faststart` variant ships
 the script but does **not** wire it as a `HEALTHCHECK`, and bare it defaults to the `FREEPDB1` PDB —
 which this image drops — so the explicit `SAKILA` arg is required. A generous `--start-period` (90s,
