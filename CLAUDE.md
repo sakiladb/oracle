@@ -71,9 +71,13 @@ port; `sq`-invisible). `staff.picture` (BLOB) and `address.location` (spatial) a
 
 ### Readiness (HEALTHCHECK)
 
-Readiness comes from the **gvenzl base image's built-in `HEALTHCHECK`** (it reports `healthy` once the
-DB is open and serving) — no override needed. The family's readiness contract (`healthy` = ready to
-serve) holds.
+The final stage declares an explicit `HEALTHCHECK` that runs the gvenzl base's `healthcheck.sh`
+against the **`SAKILA`** PDB (`CMD ["healthcheck.sh", "SAKILA"]`), so the container reports `healthy`
+once that PDB is open and the baked schema is queryable. The base's `slim-faststart` variant ships
+the script but does **not** wire it as a `HEALTHCHECK`, and bare it defaults to the `FREEPDB1` PDB —
+which this image drops — so the explicit `SAKILA` arg is required. A generous `--start-period` (90s,
+mirroring sqlserver) covers Oracle's slow PDB-open settle. The family's readiness contract (`healthy`
+= ready to serve) holds.
 
 ## How releases work
 
