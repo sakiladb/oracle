@@ -15,3 +15,11 @@ updates:
         update-types:
           - minor
           - patch
+
+  # Track the pinned gvenzl base image in the Dockerfile (now an exact version
+  # via ARG ORACLE_VERSION, not the floating slim-faststart tag) so base bumps
+  # arrive as reviewable PRs.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly

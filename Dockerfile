@@ -9,7 +9,14 @@
 #
 # Pattern mirrors postgres/Dockerfile and clickhouse/Dockerfile in this org.
 
-FROM gvenzl/oracle-free:slim-faststart AS builder
+# Pin the gvenzl base to an exact Oracle Free version instead of the floating
+# `slim-faststart` tag, so rebuilds are reproducible — the published image no
+# longer silently drifts to whatever is newest at build time (see #5). oracle
+# publishes a single major, so the release workflow does not override this;
+# Dependabot / maintainers bump the default. Used in both build stages below.
+ARG ORACLE_VERSION=23.26.2
+
+FROM gvenzl/oracle-free:${ORACLE_VERSION}-slim-faststart AS builder
 
 # ORACLE_DATABASE=SAKILA tells gvenzl's entrypoint to clone an extra PDB
 # named SAKILA from PDB$SEED at first init and create APP_USER inside it.
@@ -36,7 +43,7 @@ COPY --chown=oracle:oinstall --chmod=755 ./init-as-sakila.sh \
 RUN /opt/oracle/container-entrypoint.sh --nowait
 
 # ---------------------------------------------------------------------------
-FROM gvenzl/oracle-free:slim-faststart
+FROM gvenzl/oracle-free:${ORACLE_VERSION}-slim-faststart
 
 # Replace the empty seed data directory with our pre-loaded one. The presence
 # of /opt/oracle/oradata/dbconfig/FREE/ tells gvenzl's entrypoint that the
