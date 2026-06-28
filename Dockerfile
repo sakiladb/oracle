@@ -1,3 +1,9 @@
+# check=skip=SecretsUsedInArgOrEnv
+# ^ ORACLE_PASSWORD / APP_USER_PASSWORD below are the public, documented Sakila
+#   fixture credential (p_ssW0rd), set in the builder stage for gvenzl's init.
+#   They are not secrets, and the builder stage is discarded — the final image
+#   carries no password in its env. So this lint rule is intentionally skipped.
+
 # Multi-stage build: bake the Sakila schema+data into the Oracle data directory
 # at build time, so users get a ready-to-query DB within seconds of `docker run`.
 #
