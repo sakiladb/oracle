@@ -22,7 +22,7 @@ Or pin to a specific Oracle major version (see all available image tags on
 docker run -p 1521:1521 -d sakiladb/oracle:23
 ```
 
-The image is built on top of [`gvenzl/oracle-free:slim-faststart`](https://hub.docker.com/r/gvenzl/oracle-free)
+The image is built on top of [`gvenzl/oracle-free`](https://hub.docker.com/r/gvenzl/oracle-free), pinned to an exact version (`23.26.2-slim-faststart`),
 and ships with the data directory pre-populated, so the database is ready to
 query within seconds of container start.
 
