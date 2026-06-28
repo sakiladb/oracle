@@ -1,3 +1,9 @@
+# check=skip=SecretsUsedInArgOrEnv
+# ^ ORACLE_PASSWORD / APP_USER_PASSWORD below are the public, documented Sakila
+#   fixture credential (p_ssW0rd), set in the builder stage for gvenzl's init.
+#   They are not secrets, and the builder stage is discarded — the final image
+#   carries no password in its env. So this lint rule is intentionally skipped.
+
 # Multi-stage build: bake the Sakila schema+data into the Oracle data directory
 # at build time, so users get a ready-to-query DB within seconds of `docker run`.
 #
@@ -40,4 +46,14 @@ RUN rm -rf /opt/oracle/oradata
 COPY --chown=oracle:oinstall --from=builder /opt/oracle/oradata /opt/oracle/oradata
 
 EXPOSE 1521
+
+# Readiness probe. The gvenzl base ships /opt/oracle/healthcheck.sh but does
+# not wire it as a HEALTHCHECK, and it defaults to the FREEPDB1 PDB — which
+# this image drops (only SAKILA remains). Pass SAKILA explicitly so the probe
+# reports `healthy` once the SAKILA PDB is open and the baked schema is
+# queryable. Oracle's PDB-open settle is slow, so allow a generous grace
+# period before failures count.
+HEALTHCHECK --start-period=90s --interval=10s --timeout=10s --retries=12 \
+  CMD ["/opt/oracle/healthcheck.sh", "SAKILA"]
+
 # ENTRYPOINT and CMD inherit from the base image.
