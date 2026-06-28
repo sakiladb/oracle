@@ -76,8 +76,11 @@ against the **`SAKILA`** PDB (`CMD ["/opt/oracle/healthcheck.sh", "SAKILA"]`), s
 once that PDB is open and the baked schema is queryable. The base's `slim-faststart` variant ships
 the script but does **not** wire it as a `HEALTHCHECK`, and bare it defaults to the `FREEPDB1` PDB —
 which this image drops — so the explicit `SAKILA` arg is required. A generous `--start-period` (90s,
-mirroring sqlserver) covers Oracle's slow PDB-open settle. The family's readiness contract (`healthy`
-= ready to serve) holds.
+mirroring sqlserver) covers Oracle's slow PDB-open settle.
+
+> **Family convention:** every `sakiladb` image declares a `HEALTHCHECK` using its engine's native
+> probe (`pg_isready`, `mysqladmin ping`, `sqlcmd … SELECT 1`, `healthcheck.sh SAKILA`, …). The probe
+> differs per engine; the readiness *contract* (`healthy` = ready to serve) is uniform.
 
 ## How releases work
 
