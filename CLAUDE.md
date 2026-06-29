@@ -6,7 +6,7 @@ via [jOOQ](https://www.jooq.org/sakila)), published to
 [Docker Hub](https://hub.docker.com/r/sakiladb/oracle) and
 [GitHub Container Registry](https://github.com/sakiladb/oracle/pkgs/container/oracle).
 
-> One of the [`sakiladb`](https://github.com/sakiladb) image family (`postgres`, `mysql`,
+> One of the [`sakiladb`](https://github.com/sakiladb) image family (`postgres`, `mysql`, `mariadb`,
 > `sqlserver`, `oracle`, `clickhouse`, `rqlite`). The release machinery in
 > [How releases work](#how-releases-work) is **shared across the family** (the reference template
 > lives in [`sakiladb/postgres`](https://github.com/sakiladb/postgres)); the build details in
