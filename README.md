@@ -135,7 +135,7 @@ Each Oracle major version is published as its own image tag. `latest` tracks the
 
 | Oracle | sakiladb Release | Architecture     | Docker Hub                                                                                              | GitHub Container Registry                                                                                                              |
 |--------|------------------|------------------|--------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------|
-| 23     | `v23.0.3`        | `amd64`, `arm64` | [`sakiladb/oracle:23`](https://hub.docker.com/r/sakiladb/oracle), [`:latest`](https://hub.docker.com/r/sakiladb/oracle) | [`ghcr.io/sakiladb/oracle:23`](https://github.com/sakiladb/oracle/pkgs/container/oracle), [`:latest`](https://github.com/sakiladb/oracle/pkgs/container/oracle) |
+| 23     | `v23.0.4`        | `amd64`, `arm64` | [`sakiladb/oracle:23`](https://hub.docker.com/r/sakiladb/oracle), [`:latest`](https://hub.docker.com/r/sakiladb/oracle) | [`ghcr.io/sakiladb/oracle:23`](https://github.com/sakiladb/oracle/pkgs/container/oracle), [`:latest`](https://github.com/sakiladb/oracle/pkgs/container/oracle) |
 
 The image tag tracks the **Oracle major version** (matching `sakiladb/postgres:15`, `sakiladb/mysql:8`,
 …). **sakiladb Release** is the git tag the current image was built from (see
@@ -172,6 +172,8 @@ and has not been tampered with in transit.
 
 ### 2026-06-28
 
+- **Maintenance release** (`v23.0.4`): documentation only (README aligned with the family template).
+  The Sakila dataset and schema are unchanged from the previous release.
 - **Added a Docker `HEALTHCHECK`** (`v23.0.3`): the container now reports `healthy` once the `SAKILA`
   PDB is open and queryable (`/opt/oracle/healthcheck.sh SAKILA`).
 - **Pinned the base image** to an exact Oracle Free release (`23.26.2-slim-faststart`) via
