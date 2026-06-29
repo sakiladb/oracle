@@ -1,92 +1,162 @@
 # sakiladb/oracle
 
-Oracle Database 23ai docker image preloaded with the [Sakila](https://dev.mysql.com/doc/sakila/en/)
-example database (by way of [jOOQ](https://www.jooq.org/sakila)).
-See on [Docker Hub](https://hub.docker.com/r/sakiladb/oracle).
+An Oracle Database 23ai Docker image preloaded with the [Sakila](https://dev.mysql.com/doc/sakila/en/)
+sample database (hand-ported via [jOOQ](https://www.jooq.org/sakila)). One of the
+[`sakiladb`](https://github.com/sakiladb) image family.
 
-By default these are created:
-- pluggable database: `SAKILA`
-- username / password: `sakila` / `p_ssW0rd`
-- schema (= app user): `sakila`
+These images exist primarily as test fixtures for [`sq`](https://github.com/neilotoole/sq), a
+command-line tool for querying SQL databases and structured data, but they are free for anyone to
+use. See sq's [driver guides](https://sq.io/docs/drivers/).
 
-## Quick Start
+Available on [Docker Hub](https://hub.docker.com/r/sakiladb/oracle) and
+[GitHub Container Registry](https://github.com/sakiladb/oracle/pkgs/container/oracle).
+
+## Quick start
 
 ```shell
 docker run -p 1521:1521 -d sakiladb/oracle:latest
 ```
 
-Or pin to a specific Oracle major version (see all available image tags on
-[Docker Hub](https://hub.docker.com/r/sakiladb/oracle/tags)):
+The image is built on [`gvenzl/oracle-free`](https://hub.docker.com/r/gvenzl/oracle-free) (pinned to
+`23.26.2-slim-faststart`) with the Oracle data directory pre-baked, so the database is ready to query
+within seconds of container start, with no initialization step.
+
+The image declares a Docker
+[`HEALTHCHECK`](https://docs.docker.com/reference/dockerfile/#healthcheck), so you can wait for
+readiness rather than guessing. Its status becomes `healthy` once the `SAKILA` pluggable database is
+open and queryable:
 
 ```shell
-docker run -p 1521:1521 -d sakiladb/oracle:23
+docker run -p 1521:1521 -d --name sakila sakiladb/oracle:latest
+until [ "$(docker inspect -f '{{.State.Health.Status}}' sakila)" = healthy ]; do sleep 1; done
 ```
 
-The image is built on top of [`gvenzl/oracle-free`](https://hub.docker.com/r/gvenzl/oracle-free), pinned to an exact version (`23.26.2-slim-faststart`),
-and ships with the data directory pre-populated, so the database is ready to
-query within seconds of container start.
+In Docker Compose, gate dependents with `depends_on: { condition: service_healthy }`.
 
-### Image tag convention
+## Connection
 
-The image tag tracks the **Oracle Database major version** the image targets,
-matching the convention used by the other `sakiladb/*` repositories
-(`sakiladb/postgres:15`, `sakiladb/mysql:8`, `sakiladb/clickhouse:25`, …).
+| Setting        | Value       |
+|----------------|-------------|
+| host           | `localhost` |
+| port           | `1521`      |
+| service (PDB)  | `SAKILA`    |
+| user / schema  | `sakila`    |
+| password       | `p_ssW0rd`  |
 
-Releases are cut as semver git tags of the form `vMAJOR.MINOR.PATCH`, where
-`MAJOR` is the Oracle major version. Each tag push produces both `:<MAJOR>`
-and `:latest` on both registries:
-
-| Git tag   | Docker tag(s) published                                       |
-|-----------|---------------------------------------------------------------|
-| `v23.0.0` | `:23`, `:latest` on Docker Hub and GHCR                       |
-| `v23.1.0` | `:23`, `:latest` (both overwritten in place)                  |
-| `v23.0.1` | `:23`, `:latest` (both overwritten in place)                  |
-
-`MINOR` / `PATCH` are reserved for iterations of *this* image (schema fixes,
-packaging tweaks) on the same Oracle major. Bumping them does not change the
-Docker tag — successive `v23.x.y` releases all surface as `:23`. A new Oracle
-major (e.g. a hypothetical Oracle Free 24) would land as `v24.0.0` →
-`sakiladb/oracle:24` and would also shift `:latest`.
-
-## Releases
-
-Images are published by GitHub Actions
-([`.github/workflows/docker-publish.yml`](.github/workflows/docker-publish.yml))
-on every push of a `vMAJOR.MINOR.PATCH` tag. Pushes to branches and pull
-requests only run a validation build — they don't push anything to a
-registry. Cutting a release is therefore a two-step thing:
+Any Oracle client works with the settings above. For example, with
+[`sq`](https://github.com/neilotoole/sq) ([install](https://sq.io/docs/install)):
 
 ```shell
-git tag v23.0.0
-git push origin v23.0.0
+$ sq add 'oracle://sakila:p_ssW0rd@localhost:1521/SAKILA' --handle @sakila_or
+@sakila_or  oracle  sakila@localhost:1521/SAKILA
+
+$ sq '@sakila_or.actor | .[0:5]'
+ACTOR_ID  FIRST_NAME  LAST_NAME     LAST_UPDATE
+1         PENELOPE    GUINESS       2006-02-15T04:34:33Z
+2         NICK        WAHLBERG      2006-02-15T04:34:33Z
+3         ED          CHASE         2006-02-15T04:34:33Z
+4         JENNIFER    DAVIS         2006-02-15T04:34:33Z
+5         JOHNNY      LOLLOBRIGIDA  2006-02-15T04:34:33Z
 ```
 
-What the release pipeline does, in order:
+For JDBC:
 
-1. **Build natively for both architectures** in parallel — `linux/amd64`
-   on `ubuntu-latest`, `linux/arm64` on `ubuntu-24.04-arm`. (QEMU emulation
-   isn't faithful enough for Oracle's PMON to start.)
-2. **Push by digest** to both Docker Hub and GHCR.
-3. **Merge** the per-platform digests into a multi-arch manifest list,
-   tagged `:<MAJOR>` and `:latest` on each registry.
-4. **Sign with cosign** (keyless, via Sigstore Fulcio + Rekor — no
-   long-lived signing keys). Both the multi-arch index and the per-arch
-   image manifests are signed.
+```
+jdbc:oracle:thin:@//localhost:1521/SAKILA
+user=sakila
+password=p_ssW0rd
+```
 
-### Registries
+## What's inside
 
-| Registry  | Pull URL                       |
-|-----------|--------------------------------|
-| Docker Hub | `docker.io/sakiladb/oracle`    |
-| GHCR       | `ghcr.io/sakiladb/oracle`      |
+The standard Sakila sample database: **16 tables and 7 views**, owned by the `sakila` user (the
+schema *is* the user).
 
-The two registries publish bit-for-bit identical images (same layer
-digests) — pick whichever has lower latency for your environment.
+[`sq inspect`](https://sq.io/docs/inspect) shows the whole schema (tables, views, row counts, and
+columns) at a glance:
 
-### Verifying a pulled image
+```shell
+$ sq inspect @sakila_or
+SOURCE      DRIVER  NAME    FQ NAME        SIZE   TABLES  VIEWS  LOCATION
+@sakila_or  oracle  SAKILA  SAKILA.SAKILA  9.3MB  16      7      oracle://sakila:xxxxx@localhost:1521/SAKILA
 
-Every published tag carries a Sigstore signature tying it to this
-repository's GitHub Actions workflow. To verify:
+NAME                        TYPE   ROWS   COLS
+ACTOR                       table  200    ACTOR_ID, FIRST_NAME, LAST_NAME, LAST_UPDATE
+ADDRESS                     table  603    ADDRESS_ID, ADDRESS, ADDRESS2, DISTRICT, CITY_ID, POSTAL_CODE, PHONE, LAST_UPDATE
+CATEGORY                    table  16     CATEGORY_ID, NAME, LAST_UPDATE
+CITY                        table  600    CITY_ID, CITY, COUNTRY_ID, LAST_UPDATE
+COUNTRY                     table  109    COUNTRY_ID, COUNTRY, LAST_UPDATE
+CUSTOMER                    table  599    CUSTOMER_ID, STORE_ID, FIRST_NAME, LAST_NAME, EMAIL, ADDRESS_ID, ACTIVE, CREATE_DATE, LAST_UPDATE
+FILM                        table  1000   FILM_ID, TITLE, DESCRIPTION, RELEASE_YEAR, LANGUAGE_ID, ORIGINAL_LANGUAGE_ID, RENTAL_DURATION, RENTAL_RATE, LENGTH, REPLACEMENT_COST, RATING, SPECIAL_FEATURES, LAST_UPDATE
+FILM_ACTOR                  table  5462   ACTOR_ID, FILM_ID, LAST_UPDATE
+FILM_CATEGORY               table  1000   FILM_ID, CATEGORY_ID, LAST_UPDATE
+FILM_TEXT                   table  1000   FILM_ID, TITLE, DESCRIPTION
+INVENTORY                   table  4581   INVENTORY_ID, FILM_ID, STORE_ID, LAST_UPDATE
+LANGUAGE                    table  6      LANGUAGE_ID, NAME, LAST_UPDATE
+PAYMENT                     table  16049  PAYMENT_ID, CUSTOMER_ID, STAFF_ID, RENTAL_ID, AMOUNT, PAYMENT_DATE, LAST_UPDATE
+RENTAL                      table  16044  RENTAL_ID, RENTAL_DATE, INVENTORY_ID, CUSTOMER_ID, RETURN_DATE, STAFF_ID, LAST_UPDATE
+STAFF                       table  2      STAFF_ID, FIRST_NAME, LAST_NAME, ADDRESS_ID, EMAIL, STORE_ID, ACTIVE, USERNAME, PASSWORD, LAST_UPDATE
+STORE                       table  2      STORE_ID, MANAGER_STAFF_ID, ADDRESS_ID, LAST_UPDATE
+ACTOR_INFO                  view   200    ACTOR_ID, FIRST_NAME, LAST_NAME, FILM_INFO
+CUSTOMER_LIST               view   599    ID, NAME, ADDRESS, zip code, PHONE, CITY, COUNTRY, NOTES, SID
+FILM_LIST                   view   997    FID, TITLE, DESCRIPTION, CATEGORY, PRICE, LENGTH, RATING, ACTORS
+NICER_BUT_SLOWER_FILM_LIST  view   997    FID, TITLE, DESCRIPTION, CATEGORY, PRICE, LENGTH, RATING, ACTORS
+SALES_BY_FILM_CATEGORY      view   16     CATEGORY, TOTAL_SALES
+SALES_BY_STORE              view   2      STORE, MANAGER, TOTAL_SALES
+STAFF_LIST                  view   2      ID, NAME, ADDRESS, zip code, PHONE, CITY, COUNTRY, SID
+```
+
+## Differences from other sakila variants
+
+The object set and data match the family (the view output is byte-identical to the other variants),
+but Oracle's idioms and a few engine constraints produce these differences:
+
+- **`film_text` is populated but kept plain (no full-text index).** An Oracle Text `CONTEXT` index
+  creates several `DR$` auxiliary tables in the schema, which would break the uniform 16-table count,
+  so (like SQLite's FTS5) full-text search is omitted here.
+- **`staff.picture` (BLOB) is omitted**, and **`address.location` (GEOMETRY) is omitted** (the latter
+  is dropped across the whole family).
+- **Aggregating views use Oracle idioms:** `film_list` uses `LISTAGG` (deterministically ordered)
+  rather than the MySQL original's `GROUP_CONCAT`; `nicer_but_slower_film_list` title-cases with
+  `INITCAP`; `actor_info` uses a nested `LISTAGG`.
+- **`film.special_features`** is stored as a comma-separated `VARCHAR2(100)` rather than a `SET` or
+  array, matching what other Sakila ports do.
+- **`active` is `NUMBER(1)` with a `CHECK (active IN (0,1))`** on both `customer` and `staff`.
+- **Identifiers fold upper-case** (Oracle's default), so `sq inspect` shows `ACTOR`, `FILM_ID`, and so
+  on; the views deliberately keep the canonical mixed-case aliases (`ID`, `SID`, `FID`, `"zip code"`).
+- **Stored procedures, functions, and triggers are not ported** (faithful to jOOQ's Oracle port; they
+  are MySQL-specific PL/SQL and `sq`-invisible). Identity column high-water marks are realigned to
+  `MAX(id)+1` after the data load, so later `INSERT`s without explicit ids will not collide.
+
+## Available versions
+
+Each Oracle major version is published as its own image tag. `latest` tracks the newest version
+(currently 23).
+
+| Oracle | sakiladb Release | Architecture     | Docker Hub                                                                                              | GitHub Container Registry                                                                                                              |
+|--------|------------------|------------------|--------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------|
+| 23     | `v23.0.3`        | `amd64`, `arm64` | [`sakiladb/oracle:23`](https://hub.docker.com/r/sakiladb/oracle), [`:latest`](https://hub.docker.com/r/sakiladb/oracle) | [`ghcr.io/sakiladb/oracle:23`](https://github.com/sakiladb/oracle/pkgs/container/oracle), [`:latest`](https://github.com/sakiladb/oracle/pkgs/container/oracle) |
+
+The image tag tracks the **Oracle major version** (matching `sakiladb/postgres:15`, `sakiladb/mysql:8`,
+…). **sakiladb Release** is the git tag the current image was built from (see
+[releases](https://github.com/sakiladb/oracle/releases)); the version is `v{MAJOR}.{MINOR}.{PATCH}`
+with the **major** tracking Oracle and the **minor**/**patch** tracking sakiladb's own revisions (so
+successive `v23.x.y` releases all surface as `:23`). Every version is published to both
+[Docker Hub](https://hub.docker.com/r/sakiladb/oracle) and
+[GitHub Container Registry](https://github.com/sakiladb/oracle/pkgs/container/oracle), built natively
+for both arches (QEMU is not faithful enough for Oracle's PMON to start), and signed with
+[cosign](https://github.com/sigstore/cosign).
+
+## Releasing a new version
+
+Maintainers: releases are tag-driven. Pushing a semver tag `vN.x.y` builds and publishes that Oracle
+major version. To build the image locally, run `make build` (`make help` lists all targets). See
+[CLAUDE.md](./CLAUDE.md) for the full, repeatable procedure.
+
+## Verifying a pulled image
+
+Every published tag carries a Sigstore signature tying it to this repository's GitHub Actions
+workflow. To verify:
 
 ```shell
 cosign verify \
@@ -95,129 +165,29 @@ cosign verify \
   sakiladb/oracle:23
 ```
 
-A successful verification confirms the image was built from this
-repository's workflow on a tag push, and hasn't been tampered with in
-transit.
-
-## Build Locally
-
-The included `Makefile` wraps the common docker workflows. Run `make help`
-to list targets; the most useful are:
-
-| Target            | What it does                                              |
-|-------------------|-----------------------------------------------------------|
-| `make build`      | Build the image as `sakiladb/oracle:latest`               |
-| `make run`        | Start the image as a detached container on `:1521`        |
-| `make sqlplus`    | Open `sqlplus` inside the running container as `sakila`   |
-| `make stop`       | Stop and remove the running container                     |
-| `make logs`       | Tail container logs                                       |
-| `make convert-data` | Regenerate `2-oracle-sakila-data.sql` from the MySQL dump |
-
-Variables (`IMAGE`, `CONTAINER`, `PORT`, `PDB`, `DB_USER`, `DB_PASSWORD`) can
-be overridden on the command line, e.g. `make run PORT=1522`.
-
-Or step by step:
-
-```shell
-# Only needed if mysql-sakila-data.sql changes; 2-oracle-sakila-data.sql is committed.
-python3 convert_data.py mysql-sakila-data.sql 2-oracle-sakila-data.sql
-docker build -t sakiladb/oracle:latest .
-```
-
-The upstream MySQL data dump is vendored as `mysql-sakila-data.sql` so the
-build is self-contained — no sibling repo checkout required.
-
-## Ports
-
-- `1521`: Oracle Net listener (TCP)
-
-## Verify Installation
-
-Using `sqlplus` from inside the container:
-
-```shell
-docker exec -it $(docker ps -q -f ancestor=sakiladb/oracle:latest) \
-    sqlplus sakila/p_ssW0rd@//localhost:1521/SAKILA \
-    <<< "SELECT actor_id, first_name, last_name FROM actor FETCH FIRST 5 ROWS ONLY;"
-```
-
-Output:
-
-```
-  ACTOR_ID FIRST_NAME      LAST_NAME
----------- --------------- ---------------
-         1 PENELOPE        GUINESS
-         2 NICK            WAHLBERG
-         3 ED              CHASE
-         4 JENNIFER        DAVIS
-         5 JOHNNY          LOLLOBRIGIDA
-```
-
-## JDBC
-
-```
-jdbc:oracle:thin:@//localhost:1521/SAKILA
-user=sakila
-password=p_ssW0rd
-```
-
-## Tables
-
-| Table         | Row Count |
-|---------------|-----------|
-| actor         | 200       |
-| address       | 603       |
-| category      | 16        |
-| city          | 600       |
-| country       | 109       |
-| customer      | 599       |
-| film          | 1000      |
-| film_actor    | 5462      |
-| film_category | 1000      |
-| film_text     | 1000      |
-| inventory     | 4581      |
-| language      | 6         |
-| payment       | 16049     |
-| rental        | 16044     |
-| staff         | 2         |
-| store         | 2         |
-
-## Views
-
-- `customer_list` — customer information with address details
-- `staff_list` — staff information with address details
-- `sales_by_store` — total sales grouped by store
-- `sales_by_film_category` — total sales grouped by film category
-- `film_list` — film information with the cast aggregated (`LISTAGG` rather than
-  the MySQL original's `GROUP_CONCAT`)
-- `nicer_but_slower_film_list` — `film_list` with the cast title-cased (`INITCAP`)
-- `actor_info` — per-actor film list grouped by category (nested `LISTAGG`)
-
-## Notes
-
-- Stored procedures, functions, and triggers are not ported. The MySQL
-  originals (`rewards_report`, `get_customer_balance`, `film_in_stock`, etc.)
-  are MySQL-specific PL/SQL and out of scope for this image.
-- The `film_text` table is present and populated (parity with the family), but
-  kept **plain** — no Oracle Text full-text index. An Oracle Text `CONTEXT` index
-  creates several `DR$` auxiliary tables in the schema, which would break the
-  uniform 16-table count, so (like SQLite's FTS5) full-text search is omitted here.
-- The `picture` BLOB column is omitted from the `staff` table.
-- The `location` GEOMETRY column is omitted from the `address` table.
-- `film.special_features` is stored as a comma-separated `VARCHAR2(100)`
-  rather than a `SET`/array, matching what other ports of Sakila do.
-- Identity column high-water marks are realigned to `MAX(id)+1` after data
-  load, so subsequent `INSERT`s without explicit ids will not collide.
+A successful verification confirms the image was built from this repository's workflow on a tag push
+and has not been tampered with in transit.
 
 ## Changelog
+
+### 2026-06-28
+
+- **Added a Docker `HEALTHCHECK`** (`v23.0.3`): the container now reports `healthy` once the `SAKILA`
+  PDB is open and queryable (`/opt/oracle/healthcheck.sh SAKILA`).
+- **Pinned the base image** to an exact Oracle Free release (`23.26.2-slim-faststart`) via
+  `ARG ORACLE_VERSION`, so rebuilds are reproducible (the previously floating `slim-faststart` tag had
+  silently drifted the engine across rebuilds).
 
 ### 2026-06-26
 
 - **Restored faithful original data** (`v23.0.2`). The Sakila data is now byte-identical to the
   original MySQL Sakila: the Unicode accents stripped from international place names (e.g. `Réunion`,
   `Coruña`) are restored.
-- **Reconciled to the consistent sakiladb fixture: 16 tables + 7 views.** Added
-  `film_text` (populated, plain — see Notes) and the `actor_info` (nested `LISTAGG`)
-  and `nicer_but_slower_film_list` (`INITCAP`) views; made `film_list`'s cast order
-  deterministic; `customer_list` / `staff_list` use the canonical `zip code`. The
-  view output is byte-identical to the other variants.
+- **Reconciled to the consistent sakiladb fixture: 16 tables + 7 views.** Added `film_text`
+  (populated, plain) and the `actor_info` (nested `LISTAGG`) and `nicer_but_slower_film_list`
+  (`INITCAP`) views; made `film_list`'s cast order deterministic; `customer_list` / `staff_list` use
+  the canonical `zip code`. The view output is byte-identical to the other variants.
+
+## License
+
+[MIT](./LICENSE).
