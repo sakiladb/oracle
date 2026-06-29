@@ -114,8 +114,10 @@ but Oracle's idioms and a few engine constraints produce these differences:
 - **`film_text` is populated but kept plain (no full-text index).** An Oracle Text `CONTEXT` index
   creates several `DR$` auxiliary tables in the schema, which would break the uniform 16-table count,
   so (like SQLite's FTS5) full-text search is omitted here.
-- **`staff.picture` (BLOB) is omitted**, and **`address.location` (GEOMETRY) is omitted** (the latter
-  is dropped across the whole family).
+- **`staff.picture` (BLOB) is omitted** (Sakila's only binary column: a single decorative image with
+  no query value, dropped here rather than carried as an out-of-line Oracle LOB; engines with a
+  lightweight binary type keep it), and **`address.location` (GEOMETRY) is omitted** (the latter is
+  dropped across the whole family).
 - **Aggregating views use Oracle idioms:** `film_list` uses `LISTAGG` (deterministically ordered)
   rather than the MySQL original's `GROUP_CONCAT`; `nicer_but_slower_film_list` title-cases with
   `INITCAP`; `actor_info` uses a nested `LISTAGG`.
