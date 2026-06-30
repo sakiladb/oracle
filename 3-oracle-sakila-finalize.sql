@@ -171,5 +171,9 @@ BEGIN
 END;
 /
 
+-- Note: the staff.picture BLOB load tripwire (length + PNG header/trailer
+-- checks) lives in 2-oracle-sakila-data.sql, emitted next to the load itself by
+-- convert_data.py so the expected length/signature can never drift from it.
+
 SELECT 'sakiladb/oracle has successfully initialized.' AS sakiladb_completion_message
 FROM dual;

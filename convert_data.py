@@ -2,13 +2,18 @@
 """Convert MySQL Sakila data dump to Oracle 23ai INSERTs.
 
 - Strips MySQL preamble (SET, LOCK/UNLOCK, USE, COMMIT, /*!...*/).
-- Drops the staff.picture BLOB and the address.location GEOMETRY column.
+- Drops the address.location GEOMETRY column.
+- Carries staff.picture (Sakila's only BLOB) via a trailing DBMS_LOB load; see
+  emit_staff_picture_load for why it can't be an inline INSERT literal.
 - Skips the film_text table (omitted from our schema).
 - Strips backticks from table names in INSERT statements.
 - Emits a leading ALTER SESSION so MySQL's ISO timestamp string literals
   ('YYYY-MM-DD HH24:MI:SS') cast implicitly into TIMESTAMP/DATE columns.
 - film.special_features stays as the comma-separated string MySQL emits;
   our schema stores it in VARCHAR2(100).
+
+The output is written atomically (temp file + rename) so a failure midway, or a
+missing staff.picture blob, never leaves a partial/misleading file in place.
 
 Usage:
     python3 convert_data.py mysql-sakila-data.sql 2-oracle-sakila-data.sql
@@ -17,10 +22,20 @@ Input file `mysql-sakila-data.sql` is the upstream MySQL Sakila data dump,
 vendored into this repo so the build is self-contained.
 """
 
+import os
 import re
 import sys
 
 MYSQL_PREAMBLE_PREFIXES = ("SET ", "USE ", "LOCK ", "UNLOCK ", "COMMIT")
+
+# A staff.picture hex literal in the MySQL dump: ,0x<hex>, between two
+# comma-delimited columns (address_id before, the quoted email after).
+STAFF_PICTURE_RE = re.compile(r',0x([0-9A-Fa-f]+),')
+
+
+def fail(msg):
+    """Abort the conversion with a clear, single-line message (no traceback)."""
+    raise SystemExit("convert_data.py: " + msg)
 
 
 def strip_address_geometry(line):
@@ -28,19 +43,192 @@ def strip_address_geometry(line):
     return re.sub(r'/\*!\d+ 0x[0-9A-Fa-f]+,\*/', '', line)
 
 
-def strip_staff_picture(line):
-    # staff row layout (post-conversion target):
-    #   (id, first, last, address_id, [picture removed], email, store_id, ...)
-    # MySQL emits the picture column as either a hex BLOB (0xAB...) or NULL.
-    line = re.sub(r',0x[0-9A-Fa-f]+,', ',', line)
-    # Strip ",NULL," only when it appears immediately after a numeric address_id
-    # (to avoid mangling unrelated NULLs elsewhere in a row).
-    line = re.sub(r"(\d),NULL,'", r"\1,'", line)
-    return line
+def neutralize_staff_picture(line):
+    """Replace a staff row's inline picture blob with NULL, returning the hex.
+
+    staff row layout (matches the Oracle schema column order):
+      (id, first, last, address_id, picture, email, store_id, ...)
+    MySQL emits picture as either a hex BLOB (0xAB...) or NULL. The blob can't be
+    an inline literal (see emit_staff_picture_load), so it is replaced with NULL
+    here and the hex returned to the caller for the DBMS_LOB load. Returns
+    (line, hex_or_None); the NULL picture on staff_id = 2 yields no match and is
+    left exactly as MySQL emits it.
+    """
+    matches = STAFF_PICTURE_RE.findall(line)
+    if len(matches) > 1:
+        fail("expected at most one staff.picture blob per line, found %d"
+             % len(matches))
+    if not matches:
+        return line, None
+    return STAFF_PICTURE_RE.sub(',NULL,', line, count=1), matches[0]
+
+
+def emit_staff_picture_load(f_out, hexstr):
+    """Reassemble the staff.picture BLOB from hex chunks via DBMS_LOB.
+
+    staff.picture is Sakila's only binary column: a ~36 KB PNG on staff_id = 1
+    (staff_id = 2 is NULL). It can't be loaded as an inline INSERT literal -- the
+    ~72 KB of hex is ~18x over Oracle's 4000-byte SQL string-literal limit, and
+    BLOB || BLOB is not valid in static SQL. So the inline INSERT keeps picture
+    NULL and the image is rebuilt here with DBMS_LOB.WRITEAPPEND, then written to
+    that row.
+
+    The binding constraint on chunk size is NOT the PL/SQL literal limit (32767)
+    but SQL*Plus's input line length: the gvenzl base's sqlplus rejects script
+    lines over 4999 chars (SP2-0027), and each WRITEAPPEND is emitted on one
+    line. So chunks are 2000 bytes (4000 hex chars), keeping each line ~4 KB --
+    well under that limit while still collapsing the load to ~19 statements.
+
+    A tripwire then asserts the reassembled blob's length and its PNG header/
+    trailer bytes, so a truncated, reordered, or garbled load fails the build
+    here (during the data load) rather than shipping a corrupt image.
+    """
+    if len(hexstr) % 2 != 0:
+        fail("staff.picture hex has an odd length (%d)" % len(hexstr))
+    nbytes = len(hexstr) // 2
+    head = hexstr[:8].upper()    # PNG signature: 89 50 4E 47 (\x89PNG)
+    tail = hexstr[-8:].upper()   # IEND chunk CRC, the last 4 bytes
+    chunk = 4000  # hex chars => 2000 bytes/WRITEAPPEND, line ~4 KB < sqlplus 4999
+
+    f_out.write(
+        "\n-- --- staff.picture BLOB (staff_id = 1) --------------------------------\n"
+        "-- Reassembled from hex chunks (see convert_data.py for why it can't be an\n"
+        "-- inline literal) and written to the row inserted above with picture NULL.\n"
+        "-- staff_id = 2 stays NULL, as in MySQL Sakila.\n"
+        "-- Generated by convert_data.py; do not edit by hand.\n"
+        "DECLARE\n"
+        "  v_blob BLOB;\n"
+        "BEGIN\n"
+        "  DBMS_LOB.CREATETEMPORARY(v_blob, TRUE);\n")
+    for i in range(0, len(hexstr), chunk):
+        piece = hexstr[i:i + chunk]
+        f_out.write(
+            "  DBMS_LOB.WRITEAPPEND(v_blob, %d, HEXTORAW('%s'));\n"
+            % (len(piece) // 2, piece))
+    f_out.write(
+        "  UPDATE staff SET picture = v_blob WHERE staff_id = 1;\n"
+        "  DBMS_LOB.FREETEMPORARY(v_blob);\n"
+        "EXCEPTION\n"
+        "  WHEN OTHERS THEN\n"
+        "    -- Don't leak the temp LOB if a WRITEAPPEND/UPDATE fails; re-raise so\n"
+        "    -- the build still aborts (WHENEVER SQLERROR EXIT) on a bad load.\n"
+        "    IF v_blob IS NOT NULL AND DBMS_LOB.ISTEMPORARY(v_blob) = 1 THEN\n"
+        "      DBMS_LOB.FREETEMPORARY(v_blob);\n"
+        "    END IF;\n"
+        "    RAISE;\n"
+        "END;\n"
+        "/\n")
+
+    # Tripwire: the expected length/signature are emitted by the same generator
+    # that produced the load above, so they can never drift out of sync with it.
+    # The COMMIT is deferred until after this validates (the UPDATE is visible to
+    # it in-session), so a failed tripwire never commits a corrupt blob.
+    f_out.write(
+        "\n-- staff.picture load tripwire: fail the build if the blob did not land\n"
+        "-- intact (right length, PNG header + trailer) or staff_id = 2 is not NULL.\n"
+        "DECLARE\n"
+        "  v_len      NUMBER;\n"
+        "  v_head     VARCHAR2(8);\n"
+        "  v_tail     VARCHAR2(8);\n"
+        "  v_id2_null NUMBER;\n"
+        "BEGIN\n"
+        "  SELECT DBMS_LOB.GETLENGTH(picture),\n"
+        "         RAWTOHEX(DBMS_LOB.SUBSTR(picture, 4, 1)),\n"
+        "         RAWTOHEX(DBMS_LOB.SUBSTR(picture, 4, %d))\n"
+        "    INTO v_len, v_head, v_tail\n"
+        "    FROM staff WHERE staff_id = 1;\n"
+        "  SELECT COUNT(*) INTO v_id2_null\n"
+        "    FROM staff WHERE staff_id = 2 AND picture IS NULL;\n"
+        "  IF NVL(v_len, 0) <> %d THEN\n"
+        "    RAISE_APPLICATION_ERROR(-20002,\n"
+        "      'staff.picture (staff_id=1) length: expected %d, got ' || NVL(v_len, 0));\n"
+        "  END IF;\n"
+        "  IF v_head <> '%s' OR v_tail <> '%s' THEN\n"
+        "    RAISE_APPLICATION_ERROR(-20003,\n"
+        "      'staff.picture (staff_id=1) signature mismatch: head=' || v_head ||\n"
+        "      ' tail=' || v_tail);\n"
+        "  END IF;\n"
+        "  IF v_id2_null <> 1 THEN\n"
+        "    RAISE_APPLICATION_ERROR(-20004,\n"
+        "      'staff.picture (staff_id=2) expected NULL but is set');\n"
+        "  END IF;\n"
+        "END;\n"
+        "/\n"
+        "COMMIT;\n"
+        % (nbytes - 3, nbytes, nbytes, head, tail))
 
 
 def strip_table_backticks(line):
     return re.sub(r'INSERT INTO `(\w+)`', r'INSERT INTO \1', line)
+
+
+def convert(f_in, f_out):
+    """Convert the MySQL dump stream f_in to Oracle SQL on f_out.
+
+    Returns the captured staff.picture hex (verified present and unique).
+    """
+    current_table = None
+    staff_pictures = []
+
+    f_out.write("-- Sakila Sample Database Data for Oracle 23ai\n")
+    f_out.write("-- Converted from mysql-sakila-data.sql\n")
+    f_out.write("-- Run as the sakila user against the SAKILA PDB.\n\n")
+
+    # Allow blank lines inside long multi-row INSERTs without sqlplus
+    # treating them as statement terminators.
+    f_out.write("SET SQLBLANKLINES ON\n")
+    # Make the MySQL ISO timestamp literals cast implicitly.
+    f_out.write("ALTER SESSION SET NLS_TIMESTAMP_FORMAT='YYYY-MM-DD HH24:MI:SS';\n")
+    f_out.write("ALTER SESSION SET NLS_DATE_FORMAT='YYYY-MM-DD HH24:MI:SS';\n\n")
+
+    for line in f_in:
+        stripped = line.strip()
+
+        # Skip MySQL preamble + transaction control.
+        if stripped.startswith(MYSQL_PREAMBLE_PREFIXES):
+            continue
+
+        # Skip MySQL conditional comment statements: /*!12345 ... */;
+        if stripped.startswith('/*!') and stripped.endswith(';'):
+            continue
+
+        # Track which table we are currently emitting INSERTs for.
+        m = re.match(r'-- Dumping data for table\s+`?(\w+)`?', stripped)
+        if m:
+            current_table = m.group(1)
+            if current_table != 'film_text':
+                f_out.write(line)
+            continue
+
+        # Drop everything for the omitted film_text table.
+        if current_table == 'film_text':
+            continue
+
+        if stripped.startswith('INSERT INTO') or (stripped.startswith('(') and current_table):
+            # An INSERT, or the continuation of a multi-row VALUES list.
+            if stripped.startswith('INSERT INTO'):
+                line = strip_table_backticks(line)
+            if current_table == 'staff':
+                line, pic = neutralize_staff_picture(line)
+                if pic is not None:
+                    staff_pictures.append(pic)
+            elif current_table == 'address':
+                line = strip_address_geometry(line)
+            f_out.write(line)
+        elif stripped.startswith('--') or stripped == '':
+            f_out.write(line)
+        # else: any other line is silently dropped (DELIMITER, etc.)
+
+    f_out.write("\nCOMMIT;\n")
+
+    if len(staff_pictures) != 1:
+        fail("expected exactly one staff.picture blob in input, found %d"
+             % len(staff_pictures))
+
+    # Reload staff.picture (dropped from the inline INSERT above) now that the
+    # staff rows exist.
+    emit_staff_picture_load(f_out, staff_pictures[0])
+    return staff_pictures[0]
 
 
 def main():
@@ -50,63 +238,19 @@ def main():
         sys.exit(1)
 
     input_file, output_file = sys.argv[1], sys.argv[2]
+    tmp_file = output_file + ".tmp"
 
-    current_table = None
-
-    with open(input_file, 'r') as f_in, open(output_file, 'w') as f_out:
-        f_out.write("-- Sakila Sample Database Data for Oracle 23ai\n")
-        f_out.write("-- Converted from mysql-sakila-data.sql\n")
-        f_out.write("-- Run as the sakila user against the SAKILA PDB.\n\n")
-
-        # Allow blank lines inside long multi-row INSERTs without sqlplus
-        # treating them as statement terminators.
-        f_out.write("SET SQLBLANKLINES ON\n")
-        # Make the MySQL ISO timestamp literals cast implicitly.
-        f_out.write("ALTER SESSION SET NLS_TIMESTAMP_FORMAT='YYYY-MM-DD HH24:MI:SS';\n")
-        f_out.write("ALTER SESSION SET NLS_DATE_FORMAT='YYYY-MM-DD HH24:MI:SS';\n\n")
-
-        for line in f_in:
-            stripped = line.strip()
-
-            # Skip MySQL preamble + transaction control.
-            if stripped.startswith(MYSQL_PREAMBLE_PREFIXES):
-                continue
-
-            # Skip MySQL conditional comment statements: /*!12345 ... */;
-            if stripped.startswith('/*!') and stripped.endswith(';'):
-                continue
-
-            # Track which table we are currently emitting INSERTs for.
-            m = re.match(r'-- Dumping data for table\s+`?(\w+)`?', stripped)
-            if m:
-                current_table = m.group(1)
-                if current_table != 'film_text':
-                    f_out.write(line)
-                continue
-
-            # Drop everything for the omitted film_text table.
-            if current_table == 'film_text':
-                continue
-
-            if stripped.startswith('INSERT INTO'):
-                line = strip_table_backticks(line)
-                if current_table == 'staff':
-                    line = strip_staff_picture(line)
-                elif current_table == 'address':
-                    line = strip_address_geometry(line)
-                f_out.write(line)
-            elif stripped.startswith('(') and current_table:
-                # Continuation of a multi-row VALUES list.
-                if current_table == 'staff':
-                    line = strip_staff_picture(line)
-                elif current_table == 'address':
-                    line = strip_address_geometry(line)
-                f_out.write(line)
-            elif stripped.startswith('--') or stripped == '':
-                f_out.write(line)
-            # else: any other line is silently dropped (DELIMITER, etc.)
-
-        f_out.write("\nCOMMIT;\n")
+    # Write to a temp file and rename only on success, so a conversion error
+    # (e.g. a missing/duplicated blob) never overwrites the real output with a
+    # partial file.
+    try:
+        with open(input_file, 'r') as f_in, open(tmp_file, 'w') as f_out:
+            convert(f_in, f_out)
+    except BaseException:
+        if os.path.exists(tmp_file):
+            os.remove(tmp_file)
+        raise
+    os.replace(tmp_file, output_file)
 
 
 if __name__ == '__main__':

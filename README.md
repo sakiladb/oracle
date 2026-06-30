@@ -95,7 +95,7 @@ INVENTORY                   table  4581   INVENTORY_ID, FILM_ID, STORE_ID, LAST_
 LANGUAGE                    table  6      LANGUAGE_ID, NAME, LAST_UPDATE
 PAYMENT                     table  16049  PAYMENT_ID, CUSTOMER_ID, STAFF_ID, RENTAL_ID, AMOUNT, PAYMENT_DATE, LAST_UPDATE
 RENTAL                      table  16044  RENTAL_ID, RENTAL_DATE, INVENTORY_ID, CUSTOMER_ID, RETURN_DATE, STAFF_ID, LAST_UPDATE
-STAFF                       table  2      STAFF_ID, FIRST_NAME, LAST_NAME, ADDRESS_ID, EMAIL, STORE_ID, ACTIVE, USERNAME, PASSWORD, LAST_UPDATE
+STAFF                       table  2      STAFF_ID, FIRST_NAME, LAST_NAME, ADDRESS_ID, PICTURE, EMAIL, STORE_ID, ACTIVE, USERNAME, PASSWORD, LAST_UPDATE
 STORE                       table  2      STORE_ID, MANAGER_STAFF_ID, ADDRESS_ID, LAST_UPDATE
 ACTOR_INFO                  view   200    ACTOR_ID, FIRST_NAME, LAST_NAME, FILM_INFO
 CUSTOMER_LIST               view   599    ID, NAME, ADDRESS, zip code, PHONE, CITY, COUNTRY, NOTES, SID
@@ -114,10 +114,12 @@ but Oracle's idioms and a few engine constraints produce these differences:
 - **`film_text` is populated but kept plain (no full-text index).** An Oracle Text `CONTEXT` index
   creates several `DR$` auxiliary tables in the schema, which would break the uniform 16-table count,
   so (like SQLite's FTS5) full-text search is omitted here.
-- **`staff.picture` (BLOB) is omitted** (Sakila's only binary column: a single decorative image with
-  no query value, dropped here rather than carried as an out-of-line Oracle LOB; engines with a
-  lightweight binary type keep it), and **`address.location` (GEOMETRY) is omitted** (the latter is
-  dropped across the whole family).
+- **`staff.picture` (BLOB) is present**, like the rest of the family. Sakila's only binary column (a
+  ~36 KB PNG on `staff_id = 1`; `staff_id = 2` is `NULL`) is stored in a real Oracle `BLOB` and
+  inspects as a `bytes` column. Because the image exceeds Oracle's 4000-byte SQL string-literal limit,
+  it is loaded in one place via a `DBMS_LOB` chunked reassembly (see `2-oracle-sakila-data.sql`) rather
+  than an inline `INSERT`. **`address.location` (GEOMETRY) is omitted** (dropped across the whole
+  family).
 - **Aggregating views use Oracle idioms:** `film_list` uses `LISTAGG` (deterministically ordered)
   rather than the MySQL original's `GROUP_CONCAT`; `nicer_but_slower_film_list` title-cases with
   `INITCAP`; `actor_info` uses a nested `LISTAGG`.
@@ -137,7 +139,7 @@ Each Oracle major version is published as its own image tag. `latest` tracks the
 
 | Oracle | sakiladb Release | Architecture     | Docker Hub                                                                                              | GitHub Container Registry                                                                                                              |
 |--------|------------------|------------------|--------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------|
-| 23     | `v23.0.4`        | `amd64`, `arm64` | [`sakiladb/oracle:23`](https://hub.docker.com/r/sakiladb/oracle), [`:latest`](https://hub.docker.com/r/sakiladb/oracle) | [`ghcr.io/sakiladb/oracle:23`](https://github.com/sakiladb/oracle/pkgs/container/oracle), [`:latest`](https://github.com/sakiladb/oracle/pkgs/container/oracle) |
+| 23     | `v23.0.5`        | `amd64`, `arm64` | [`sakiladb/oracle:23`](https://hub.docker.com/r/sakiladb/oracle), [`:latest`](https://hub.docker.com/r/sakiladb/oracle) | [`ghcr.io/sakiladb/oracle:23`](https://github.com/sakiladb/oracle/pkgs/container/oracle), [`:latest`](https://github.com/sakiladb/oracle/pkgs/container/oracle) |
 
 The image tag tracks the **Oracle major version** (matching `sakiladb/postgres:15`, `sakiladb/mysql:8`,
 …). **sakiladb Release** is the git tag the current image was built from (see
@@ -171,6 +173,15 @@ A successful verification confirms the image was built from this repository's wo
 and has not been tampered with in transit.
 
 ## Changelog
+
+### 2026-06-30
+
+- **Restored the `staff.picture` BLOB column** (`v23.0.5`). Sakila's only binary column is now carried
+  faithfully in a real Oracle `BLOB` (the ~36 KB PNG on `staff_id = 1`; `staff_id = 2` is `NULL`), so
+  `staff` matches the canonical 11-column schema and inspects as a `bytes` column. The image is
+  reassembled at build time from hex chunks via `DBMS_LOB` (it exceeds Oracle's 4000-byte string
+  literal limit). Oracle no longer diverges from the family on this column; ClickHouse remains the sole
+  variant without it (it has no native binary type).
 
 ### 2026-06-28
 
