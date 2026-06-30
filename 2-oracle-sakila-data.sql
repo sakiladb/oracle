@@ -46450,7 +46450,6 @@ EXCEPTION
     RAISE;
 END;
 /
-COMMIT;
 
 -- staff.picture load tripwire: fail the build if the blob did not land
 -- intact (right length, PNG header + trailer) or staff_id = 2 is not NULL.
@@ -46482,3 +46481,4 @@ BEGIN
   END IF;
 END;
 /
+COMMIT;

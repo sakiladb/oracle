@@ -117,11 +117,12 @@ def emit_staff_picture_load(f_out, hexstr):
         "    END IF;\n"
         "    RAISE;\n"
         "END;\n"
-        "/\n"
-        "COMMIT;\n")
+        "/\n")
 
     # Tripwire: the expected length/signature are emitted by the same generator
     # that produced the load above, so they can never drift out of sync with it.
+    # The COMMIT is deferred until after this validates (the UPDATE is visible to
+    # it in-session), so a failed tripwire never commits a corrupt blob.
     f_out.write(
         "\n-- staff.picture load tripwire: fail the build if the blob did not land\n"
         "-- intact (right length, PNG header + trailer) or staff_id = 2 is not NULL.\n"
@@ -153,6 +154,7 @@ def emit_staff_picture_load(f_out, hexstr):
         "  END IF;\n"
         "END;\n"
         "/\n"
+        "COMMIT;\n"
         % (nbytes - 3, nbytes, nbytes, head, tail))
 
 
