@@ -9,8 +9,9 @@
 -- Run as the sakila application user against FREEPDB1.
 -- All objects are owned by the sakila user (the schema is the user).
 
--- film_text (with an Oracle Text full-text index) and the actor_info /
--- nicer_but_slower_film_list views are included for parity with the family
+-- film_text (a plain populated table -- no Oracle Text index, see the note in
+-- 3-oracle-sakila-finalize.sql) and the actor_info / nicer_but_slower_film_list
+-- views are included for parity with the family
 -- (16 tables + 7 views). staff.picture (Sakila's only BLOB column) is carried
 -- here too: Oracle has a real BLOB type, so the ~36 KB image is loaded
 -- faithfully (see 2-oracle-sakila-data.sql for the DBMS_LOB chunked load).

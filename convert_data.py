@@ -108,6 +108,14 @@ def emit_staff_picture_load(f_out, hexstr):
     f_out.write(
         "  UPDATE staff SET picture = v_blob WHERE staff_id = 1;\n"
         "  DBMS_LOB.FREETEMPORARY(v_blob);\n"
+        "EXCEPTION\n"
+        "  WHEN OTHERS THEN\n"
+        "    -- Don't leak the temp LOB if a WRITEAPPEND/UPDATE fails; re-raise so\n"
+        "    -- the build still aborts (WHENEVER SQLERROR EXIT) on a bad load.\n"
+        "    IF v_blob IS NOT NULL AND DBMS_LOB.ISTEMPORARY(v_blob) = 1 THEN\n"
+        "      DBMS_LOB.FREETEMPORARY(v_blob);\n"
+        "    END IF;\n"
+        "    RAISE;\n"
         "END;\n"
         "/\n"
         "COMMIT;\n")
