@@ -44,8 +44,15 @@ output verified byte-identical to postgres/mysql). Oracle-specific points:
   a parity defect).
 - **`customer_list` / `staff_list` use `"zip code"`** (quoted, the canonical spaced identifier).
 
+- **`staff.picture` (BLOB) is present.** Oracle has a real `BLOB` type, so Sakila's only binary column
+  (a ~36 KB PNG on `staff_id = 1`) is carried faithfully and inspects as `bytes`. It exceeds Oracle's
+  4000-byte SQL string-literal limit, so `convert_data.py` keeps the inline `INSERT`'s `picture` `NULL`
+  and emits a trailing `DBMS_LOB.WRITEAPPEND` reassembly into `2-oracle-sakila-data.sql`; a tripwire in
+  the finalize step asserts the loaded length. ClickHouse is the only family member still without this
+  column (no native binary type).
+
 Stored procedures, functions, and triggers are intentionally **omitted** (faithful to jOOQ's Oracle
-port; `sq`-invisible). `staff.picture` (BLOB) and `address.location` (spatial) are also omitted.
+port; `sq`-invisible). `address.location` (spatial) is also omitted.
 
 ## How the image is built
 

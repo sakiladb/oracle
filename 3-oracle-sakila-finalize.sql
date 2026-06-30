@@ -171,5 +171,29 @@ BEGIN
 END;
 /
 
+-- --- staff.picture BLOB tripwire --------------------------------------------
+-- The image is reassembled from hex chunks in 2-oracle-sakila-data.sql; assert
+-- it landed intact (staff_id = 1 = the ~36 KB PNG, staff_id = 2 = NULL) so a
+-- truncated or mis-loaded blob fails the build here rather than shipping.
+DECLARE
+  v_len      NUMBER;
+  v_expected CONSTANT NUMBER := 36365;
+  v_id2_null NUMBER;
+BEGIN
+  SELECT DBMS_LOB.GETLENGTH(picture) INTO v_len      FROM staff WHERE staff_id = 1;
+  SELECT COUNT(*)                    INTO v_id2_null FROM staff WHERE staff_id = 2 AND picture IS NULL;
+  IF NVL(v_len, 0) <> v_expected THEN
+    RAISE_APPLICATION_ERROR(
+      -20002,
+      'staff.picture (staff_id=1) length mismatch: expected ' ||
+      v_expected || ', got ' || NVL(v_len, 0));
+  END IF;
+  IF v_id2_null <> 1 THEN
+    RAISE_APPLICATION_ERROR(
+      -20003, 'staff.picture (staff_id=2) expected NULL but is set');
+  END IF;
+END;
+/
+
 SELECT 'sakiladb/oracle has successfully initialized.' AS sakiladb_completion_message
 FROM dual;
