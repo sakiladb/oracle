@@ -144,7 +144,7 @@ Each Oracle major version is published as its own image tag. `latest` tracks the
 
 | Oracle | sakiladb Release | Architecture     | Docker Hub                                                                                              | GitHub Container Registry                                                                                                              |
 |--------|------------------|------------------|--------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------|
-| 23     | `v23.0.5`        | `amd64`, `arm64` | [`sakiladb/oracle:23`](https://hub.docker.com/r/sakiladb/oracle), [`:latest`](https://hub.docker.com/r/sakiladb/oracle) | [`ghcr.io/sakiladb/oracle:23`](https://github.com/sakiladb/oracle/pkgs/container/oracle), [`:latest`](https://github.com/sakiladb/oracle/pkgs/container/oracle) |
+| 23     | `v23.0.6`        | `amd64`, `arm64` | [`sakiladb/oracle:23`](https://hub.docker.com/r/sakiladb/oracle), [`:latest`](https://hub.docker.com/r/sakiladb/oracle) | [`ghcr.io/sakiladb/oracle:23`](https://github.com/sakiladb/oracle/pkgs/container/oracle), [`:latest`](https://github.com/sakiladb/oracle/pkgs/container/oracle) |
 
 The image tag tracks the **Oracle major version** (matching `sakiladb/postgres:15`, `sakiladb/mysql:8`,
 …). **sakiladb Release** is the git tag the current image was built from (see
@@ -154,7 +154,9 @@ successive `v23.x.y` releases all surface as `:23`). Every version is published 
 [Docker Hub](https://hub.docker.com/r/sakiladb/oracle) and
 [GitHub Container Registry](https://github.com/sakiladb/oracle/pkgs/container/oracle), built natively
 for both arches (QEMU is not faithful enough for Oracle's PMON to start), and signed with
-[cosign](https://github.com/sigstore/cosign).
+[cosign](https://github.com/sigstore/cosign). Each image also carries
+[SLSA build provenance](https://slsa.dev/) and an SPDX [SBOM](https://spdx.dev/) attestation
+(verify with `gh attestation verify`).
 
 ## Releasing a new version
 
@@ -181,6 +183,11 @@ and has not been tampered with in transit.
 
 ### 2026-06-30
 
+- **Supply-chain attestations** (`v23.0.6`): published images now carry
+  [SLSA build provenance](https://slsa.dev/) and an SPDX [SBOM](https://spdx.dev/)
+  attestation, alongside the existing cosign signature (as OCI referrers on Docker
+  Hub and GHCR and in GitHub's attestation store; verify with `gh attestation verify`).
+  The README is also synced to the Docker Hub description on release.
 - **Restored the `staff.picture` BLOB column** (`v23.0.5`). Sakila's only binary column is now carried
   faithfully in a real Oracle `BLOB` (the ~36 KB PNG on `staff_id = 1`; `staff_id = 2` is `NULL`), so
   `staff` matches the canonical 11-column schema and inspects as a `bytes` column. The image is
