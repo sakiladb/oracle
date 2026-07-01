@@ -170,6 +170,11 @@ jobs:
       id-token: write
 
     steps:
+      # README.md is needed for the Docker Hub description sync at the end of
+      # this job (the merge job otherwise doesn't check out the repo).
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
       - name: Install cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
 
@@ -258,3 +263,18 @@ jobs:
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
         run: echo "$TAGS" | xargs -I {} cosign sign --yes --recursive {}
+
+      # Sync this repo's README to the Docker Hub repository's full description
+      # (cosmetic; images already published above). The whole merge job is
+      # release-gated, so no per-step `if` is needed. The curated short
+      # description is left untouched (no short-description input).
+      # continue-on-error: a description-API failure (e.g. DOCKER_PASSWORD is a
+      # PAT lacking description-write scope) must never fail a release that has
+      # already pushed the image; check the first release's logs to confirm sync.
+      - name: Sync README to Docker Hub description
+        continue-on-error: true
+        uses: peter-evans/dockerhub-description@1b9a80c056b620d92cedb9d9b5a223409c68ddfa  # v5.0.0
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+          repository: ${{ github.repository }}
