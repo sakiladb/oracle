@@ -144,7 +144,7 @@ Each Oracle major version is published as its own image tag. `latest` tracks the
 
 | Oracle | sakiladb Release | Architecture     | Docker Hub                                                                                              | GitHub Container Registry                                                                                                              |
 |--------|------------------|------------------|--------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------|
-| 23     | `v23.0.6`        | `amd64`, `arm64` | [`sakiladb/oracle:23`](https://hub.docker.com/r/sakiladb/oracle), [`:latest`](https://hub.docker.com/r/sakiladb/oracle) | [`ghcr.io/sakiladb/oracle:23`](https://github.com/sakiladb/oracle/pkgs/container/oracle), [`:latest`](https://github.com/sakiladb/oracle/pkgs/container/oracle) |
+| 23     | `v23.0.7`        | `amd64`, `arm64` | [`sakiladb/oracle:23`](https://hub.docker.com/r/sakiladb/oracle), [`:latest`](https://hub.docker.com/r/sakiladb/oracle) | [`ghcr.io/sakiladb/oracle:23`](https://github.com/sakiladb/oracle/pkgs/container/oracle), [`:latest`](https://github.com/sakiladb/oracle/pkgs/container/oracle) |
 
 The image tag tracks the **Oracle major version** (matching `sakiladb/postgres:15`, `sakiladb/mysql:8`,
 …). **sakiladb Release** is the git tag the current image was built from (see
@@ -183,7 +183,7 @@ and has not been tampered with in transit.
 
 ### 2026-06-30
 
-- **Supply-chain attestations** (`v23.0.6`): published images now carry
+- **Supply-chain attestations** (`v23.0.7`; releases now self-verify their attestations): published images now carry
   [SLSA build provenance](https://slsa.dev/) and an SPDX [SBOM](https://spdx.dev/)
   attestation, alongside the existing cosign signature (as OCI referrers on Docker
   Hub and GHCR and in GitHub's attestation store; verify with `gh attestation verify`).
