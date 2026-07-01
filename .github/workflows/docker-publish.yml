@@ -168,6 +168,8 @@ jobs:
       contents: read
       packages: write
       id-token: write
+      # Lets the attest-build-provenance / attest steps write attestations.
+      attestations: write
 
     steps:
       # README.md is needed for the Docker Hub description sync at the end of
@@ -263,6 +265,70 @@ jobs:
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
         run: echo "$TAGS" | xargs -I {} cosign sign --yes --recursive {}
+
+      # Capture the pushed multi-arch manifest-list digest per registry. The
+      # merge job assembles the list with imagetools, so there's no
+      # build-push output.digest here as in the single-job repos; these digests
+      # are the attestation subjects below. --format '{{.Manifest.Digest}}'
+      # prints the raw index digest (no quotes).
+      - name: Capture manifest digests
+        id: digests
+        env:
+          DH: ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+          GH: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+        run: |
+          echo "dockerhub=$(docker buildx imagetools inspect "$DH" --format '{{.Manifest.Digest}}')" >> "$GITHUB_OUTPUT"
+          echo "ghcr=$(docker buildx imagetools inspect "$GH" --format '{{.Manifest.Digest}}')" >> "$GITHUB_OUTPUT"
+
+      # SLSA build provenance, attached to each registry's manifest-list digest
+      # as an OCI referrer. The whole merge job is release-gated, so no per-step
+      # `if`. Attests already-pushed digests, so no buildx wrapper-index concern.
+      - name: Attest provenance (Docker Hub)
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.digests.outputs.dockerhub }}
+          push-to-registry: true
+
+      - name: Attest provenance (GHCR)
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.digests.outputs.ghcr }}
+          push-to-registry: true
+
+      # SBOM: scan the pushed Docker Hub image and attest the SPDX doc as an OCI
+      # referrer on each registry. SYFT_FILE_METADATA_SELECTION=none strips the
+      # heavy per-file metadata so the SPDX stays under actions/attest's 16 MiB
+      # predicate limit (large images otherwise blow past it). syft scans the
+      # runner's amd64 variant.
+      - name: Generate SBOM
+        env:
+          SYFT_FILE_METADATA_SELECTION: none
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
+        with:
+          image: ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}@${{ steps.digests.outputs.dockerhub }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      # Unified actions/attest (actions/attest-sbom is deprecated).
+      - name: Attest SBOM (Docker Hub)
+        uses: actions/attest@v4
+        with:
+          subject-name: ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.digests.outputs.dockerhub }}
+          predicate-type: https://spdx.dev/Document
+          predicate-path: sbom.spdx.json
+          push-to-registry: true
+
+      - name: Attest SBOM (GHCR)
+        uses: actions/attest@v4
+        with:
+          subject-name: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.digests.outputs.ghcr }}
+          predicate-type: https://spdx.dev/Document
+          predicate-path: sbom.spdx.json
+          push-to-registry: true
 
       # Sync this repo's README to the Docker Hub repository's full description
       # (cosmetic; images already published above). The whole merge job is
