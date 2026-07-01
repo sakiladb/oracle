@@ -330,6 +330,30 @@ jobs:
           predicate-path: sbom.spdx.json
           push-to-registry: true
 
+      # Independently verify what we just pushed (a green attest step means
+      # "uploaded", not "verifiable"). GitHub's store is the hard gate; the
+      # registry referrer (Scout-facing) is retried to absorb post-push lag.
+      # Per-registry manifest-list digests (from the Capture step above). The
+      # whole merge job is release-gated, so no per-step `if`.
+      - name: Verify attestations
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DH_DIGEST: ${{ steps.digests.outputs.dockerhub }}
+          GHCR_DIGEST: ${{ steps.digests.outputs.ghcr }}
+        run: |
+          set -euo pipefail
+          SPDX=https://spdx.dev/Document
+          retry() { local n=0; until "$@"; do n=$((n+1)); [ "$n" -ge 5 ] && return 1; echo "not ready (attempt $n), retrying..."; sleep 6; done; }
+          verify_ref() {
+            gh attestation verify "$1" --repo "$IMAGE_NAME"
+            gh attestation verify "$1" --repo "$IMAGE_NAME" --predicate-type "$SPDX"
+            retry gh attestation verify "$1" --repo "$IMAGE_NAME" --bundle-from-oci
+            retry gh attestation verify "$1" --repo "$IMAGE_NAME" --bundle-from-oci --predicate-type "$SPDX"
+          }
+          verify_ref "oci://${REGISTRY_DOCKERHUB}/${IMAGE_NAME}@${DH_DIGEST}"
+          verify_ref "oci://${REGISTRY_GHCR}/${IMAGE_NAME}@${GHCR_DIGEST}"
+          echo "All attestations verified (provenance + SBOM, store + referrer) on both registries."
+
       # Sync this repo's README to the Docker Hub repository's full description
       # (cosmetic; images already published above). The whole merge job is
       # release-gated, so no per-step `if` is needed. The curated short
