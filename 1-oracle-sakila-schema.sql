@@ -1,4 +1,4 @@
--- Sakila Sample Database Schema for Oracle 23ai
+-- Sakila Sample Database Schema for Oracle 21c and 23ai
 -- Version 1.2
 
 -- Copyright (c) 2006, 2019, Oracle and/or its affiliates.
@@ -6,7 +6,7 @@
 -- BSD License (see mysql/1-sakila-schema.sql for full text).
 
 -- Hand-ported from mysql/1-sakila-schema.sql.
--- Run as the sakila application user against FREEPDB1.
+-- Run as the sakila application user against the SAKILA PDB.
 -- All objects are owned by the sakila user (the schema is the user).
 
 -- film_text (a plain populated table -- no Oracle Text index, see the note in

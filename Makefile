@@ -1,4 +1,6 @@
 IMAGE     ?= sakiladb/oracle:latest
+# Oracle major to build: 23 (default) or 21 (amd64 hosts only).
+ORACLE_MAJOR ?= 23
 CONTAINER ?= sakiladb-oracle
 PORT      ?= 1521
 PDB       ?= SAKILA
@@ -13,8 +15,8 @@ DB_PASSWORD ?= p_ssW0rd
 help:
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  %-14s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-build: ## Build the image as $(IMAGE)
-	docker build -t $(IMAGE) .
+build: ## Build Oracle $(ORACLE_MAJOR) as $(IMAGE)
+	docker build --build-arg ORACLE_MAJOR=$(ORACLE_MAJOR) -t $(IMAGE) .
 
 convert-data: ## Regenerate 2-oracle-sakila-data.sql from the vendored MySQL dump
 	python3 convert_data.py mysql-sakila-data.sql 2-oracle-sakila-data.sql

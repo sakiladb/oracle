@@ -1,7 +1,7 @@
 #!/bin/bash
 # Runs the Sakila schema/data/finalize SQL as the APP_USER against the
 # SAKILA PDB (created by gvenzl's entrypoint via ORACLE_DATABASE=SAKILA),
-# then drops the empty default FREEPDB1 PDB so the final image carries
+# then drops the empty default PDB (FREEPDB1 or XEPDB1) so the final image carries
 # only the Sakila tablespaces.
 #
 # We intentionally do NOT drop the SQL files into /container-entrypoint-initdb.d/
@@ -36,20 +36,28 @@ SET FEEDBACK ON
 EXIT
 EOF
 
-echo "CONTAINER: Sakila loaded. Dropping the empty FREEPDB1 PDB to slim the image."
+echo "CONTAINER: Sakila loaded. Dropping the empty default PDB to slim the image."
 
-# FREEPDB1 is created by the gvenzl base image as the default sample PDB.
-# We don't use it (Sakila lives in SAKILA), so drop it to recover ~500 MB
-# of system/sysaux/users/temp tablespaces from the final image. Must be
+# The gvenzl base creates a default sample PDB: FREEPDB1 on 23ai Free, XEPDB1
+# on 21c XE. We don't use it (Sakila lives in SAKILA), so drop it to recover
+# ~500 MB of system/sysaux/users/temp tablespaces from the final image. Rather
+# than hard-code its name, drop every PDB that isn't ours or the seed. Must be
 # CLOSED before DROP. INCLUDING DATAFILES removes the underlying files.
-sqlplus -L -S / as sysdba <<'EOF'
+sqlplus -L -S / as sysdba <<EOF
 WHENEVER SQLERROR EXIT SQL.SQLCODE
-ALTER PLUGGABLE DATABASE FREEPDB1 CLOSE IMMEDIATE;
-DROP PLUGGABLE DATABASE FREEPDB1 INCLUDING DATAFILES;
+SET SERVEROUTPUT ON
+BEGIN
+  FOR p IN (SELECT name FROM v\$pdbs WHERE name NOT IN ('PDB\$SEED', '${PDB}')) LOOP
+    DBMS_OUTPUT.PUT_LINE('CONTAINER: dropping PDB ' || p.name);
+    EXECUTE IMMEDIATE 'ALTER PLUGGABLE DATABASE ' || p.name || ' CLOSE IMMEDIATE';
+    EXECUTE IMMEDIATE 'DROP PLUGGABLE DATABASE ' || p.name || ' INCLUDING DATAFILES';
+  END LOOP;
+END;
+/
 EXIT
 EOF
 
-echo "CONTAINER: FREEPDB1 dropped. Shutting database down cleanly so the"
+echo "CONTAINER: default PDB dropped. Shutting database down cleanly so the"
 echo "CONTAINER: data directory layer can be committed in a consistent state."
 
 # Graceful shutdown: ensures datafiles are quiesced before the Docker layer

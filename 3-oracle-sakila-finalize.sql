@@ -1,5 +1,5 @@
 -- Sakila finalize: install foreign keys, realign identity high-water marks,
--- and verify expected row counts. Runs as the sakila app user on FREEPDB1.
+-- and verify expected row counts. Runs as the sakila app user on SAKILA.
 
 -- --- Foreign keys -----------------------------------------------------------
 -- Added after the data load (which arrives in alphabetical table order, so
