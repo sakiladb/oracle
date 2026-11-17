@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
-"""Convert MySQL Sakila data dump to Oracle 23ai INSERTs.
+"""Convert MySQL Sakila data dump to Oracle INSERTs (21c and 23ai).
 
+- Emits one INSERT per row: MySQL's multi-row INSERT ... VALUES (...),(...) is
+  23ai-only syntax (21c raises ORA-00933).
+- Keeps every line within SQLPLUS_MAX_LINE, and fails if any line isn't.
 - Strips MySQL preamble (SET, LOCK/UNLOCK, USE, COMMIT, /*!...*/).
 - Drops the address.location GEOMETRY column.
 - Carries staff.picture (Sakila's only BLOB) via a trailing DBMS_LOB load; see
@@ -32,10 +35,51 @@ MYSQL_PREAMBLE_PREFIXES = ("SET ", "USE ", "LOCK ", "UNLOCK ", "COMMIT")
 # comma-delimited columns (address_id before, the quoted email after).
 STAFF_PICTURE_RE = re.compile(r',0x([0-9A-Fa-f]+),')
 
+# Hex chars per DBMS_LOB.WRITEAPPEND (1000 bytes). See emit_staff_picture_load.
+BLOB_CHUNK_HEX = 2000
+
+# Longest script line every supported SQL*Plus accepts: Oracle 21c's rejects
+# lines over 3000 chars (SP2-0341), 23ai's over 4999 (SP2-0027).
+SQLPLUS_MAX_LINE = 2999
+
+# The start of a MySQL INSERT, after backtick stripping: "INSERT INTO t VALUES ".
+INSERT_PREFIX_RE = re.compile(r'^(INSERT INTO \w+ VALUES )')
+
 
 def fail(msg):
     """Abort the conversion with a clear, single-line message (no traceback)."""
     raise SystemExit("convert_data.py: " + msg)
+
+
+def split_insert_row(line):
+    """Split one line of a MySQL multi-row INSERT into (prefix, row).
+
+    mysqldump emits one row per line: the first row on the INSERT line itself,
+    each later row as a "(...)," continuation, the last ending ");". Returns
+    ("INSERT INTO t VALUES ", "(...)") for an INSERT line, (None, "(...)") for a
+    continuation, with the trailing ',' or ';' removed.
+    """
+    stripped = line.strip()
+    if not (stripped.endswith('),') or stripped.endswith(');')):
+        fail("expected an INSERT row ending in '),' or ');', got: %.80s" % stripped)
+    m = INSERT_PREFIX_RE.match(stripped)
+    if m:
+        return m.group(1), stripped[m.end():-1]
+    return None, stripped[:-1]
+
+
+def check_line_lengths(path, limit=SQLPLUS_MAX_LINE):
+    """Fail if any line of path is longer than limit chars.
+
+    SQL*Plus doesn't treat an over-long line as a SQL error: it reports SP2-0341
+    and skips the statement, so WHENEVER SQLERROR doesn't stop the load.
+    """
+    with open(path) as f:
+        for n, line in enumerate(f, 1):
+            length = len(line.rstrip('\n'))
+            if length > limit:
+                fail("%s line %d is %d chars, over the %d-char SQL*Plus limit"
+                     % (path, n, length, limit))
 
 
 def strip_address_geometry(line):
@@ -74,10 +118,11 @@ def emit_staff_picture_load(f_out, hexstr):
     that row.
 
     The binding constraint on chunk size is NOT the PL/SQL literal limit (32767)
-    but SQL*Plus's input line length: the gvenzl base's sqlplus rejects script
-    lines over 4999 chars (SP2-0027), and each WRITEAPPEND is emitted on one
-    line. So chunks are 2000 bytes (4000 hex chars), keeping each line ~4 KB --
-    well under that limit while still collapsing the load to ~19 statements.
+    but SQL*Plus's input line length, since each WRITEAPPEND is emitted on one
+    line. Oracle 21c's sqlplus rejects lines over 3000 chars (SP2-0341; 23ai's
+    limit is 4999) -- and an SP2 error skips the whole PL/SQL block without
+    tripping WHENEVER SQLERROR. So chunks are 1000 bytes (BLOB_CHUNK_HEX = 2000
+    hex chars), keeping each line ~2 KB, under SQLPLUS_MAX_LINE (37 statements).
 
     A tripwire then asserts the reassembled blob's length and its PNG header/
     trailer bytes, so a truncated, reordered, or garbled load fails the build
@@ -88,7 +133,7 @@ def emit_staff_picture_load(f_out, hexstr):
     nbytes = len(hexstr) // 2
     head = hexstr[:8].upper()    # PNG signature: 89 50 4E 47 (\x89PNG)
     tail = hexstr[-8:].upper()   # IEND chunk CRC, the last 4 bytes
-    chunk = 4000  # hex chars => 2000 bytes/WRITEAPPEND, line ~4 KB < sqlplus 4999
+    chunk = BLOB_CHUNK_HEX
 
     f_out.write(
         "\n-- --- staff.picture BLOB (staff_id = 1) --------------------------------\n"
@@ -168,9 +213,10 @@ def convert(f_in, f_out):
     Returns the captured staff.picture hex (verified present and unique).
     """
     current_table = None
+    insert_prefix = None
     staff_pictures = []
 
-    f_out.write("-- Sakila Sample Database Data for Oracle 23ai\n")
+    f_out.write("-- Sakila Sample Database Data for Oracle 21c and 23ai\n")
     f_out.write("-- Converted from mysql-sakila-data.sql\n")
     f_out.write("-- Run as the sakila user against the SAKILA PDB.\n\n")
 
@@ -214,7 +260,13 @@ def convert(f_in, f_out):
                     staff_pictures.append(pic)
             elif current_table == 'address':
                 line = strip_address_geometry(line)
-            f_out.write(line)
+            # One INSERT per row (21c has no multi-row VALUES).
+            prefix, row = split_insert_row(line)
+            if prefix is not None:
+                insert_prefix = prefix
+            elif insert_prefix is None:
+                fail("INSERT continuation row before any INSERT: %.80s" % row)
+            f_out.write(insert_prefix + row + ";\n")
         elif stripped.startswith('--') or stripped == '':
             f_out.write(line)
         # else: any other line is silently dropped (DELIMITER, etc.)
@@ -246,6 +298,7 @@ def main():
     try:
         with open(input_file, 'r') as f_in, open(tmp_file, 'w') as f_out:
             convert(f_in, f_out)
+        check_line_lengths(tmp_file)
     except BaseException:
         if os.path.exists(tmp_file):
             os.remove(tmp_file)
