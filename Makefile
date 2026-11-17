@@ -10,7 +10,7 @@ PDB       ?= SAKILA
 DB_USER     ?= sakila
 DB_PASSWORD ?= p_ssW0rd
 
-.PHONY: help build convert-data run stop restart logs sqlplus shell test clean rebuild
+.PHONY: help build convert-data run stop restart logs sqlplus shell test update-view-hashes unit-test clean rebuild
 
 help:
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  %-14s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -38,8 +38,15 @@ sqlplus: ## Open sqlplus inside $(CONTAINER) as $(DB_USER)@$(PDB)
 shell: ## bash into $(CONTAINER)
 	docker exec -it $(CONTAINER) bash
 
-test: ## Smoke-check row counts against the running $(CONTAINER)
-	@docker exec $(CONTAINER) sh -c "printf 'SET HEADING OFF FEEDBACK OFF PAGESIZE 0\nSELECT COUNT(*) FROM actor;\nSELECT COUNT(*) FROM film;\nSELECT COUNT(*) FROM rental;\n' | sqlplus -S $(DB_USER)/$(DB_PASSWORD)@//localhost:1521/$(PDB)"
+test: ## Smoke-test $(IMAGE): counts, BLOB, golden view hashes (runs its own container)
+	./smoke-test.sh $(IMAGE)
+
+update-view-hashes: ## Regenerate testdata/view-hashes.txt from $(IMAGE)
+	./smoke-test.sh --update-hashes $(IMAGE)
+
+unit-test: ## Run the convert_data.py and CI-script tests
+	python3 -m unittest -v test_convert_data
+	bash .github/scripts/resolve-version_test.sh
 
 clean: ## Remove $(IMAGE) and any dangling builder cache
 	-docker rmi $(IMAGE)
