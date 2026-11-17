@@ -96,8 +96,9 @@ pin won't move. Build locally with `make build` (23) or `make build ORACLE_MAJOR
 only: Oracle doesn't run under emulation).
 
 **21 is a 19c stand-in.** 19c is what most Oracle users run, but it has no free edition. 21c is the
-closest version that can be published, and like 19c it lacks 23ai's `VECTOR`, `BOOLEAN` and native
-`JSON`. Oracle's patching for 21c ended in April 2025.
+closest version that can be published, and like 19c it lacks 23ai's `VECTOR` and SQL `BOOLEAN`. (It
+does have the native `JSON` type, which arrived in 21c, so JSON-type code that works on `:21` may
+still fail on 19c.) Oracle's patching for 21c ended in April 2025.
 
 **Adding a version** means a new `base-NN` stage in the `Dockerfile` plus a row in
 `.github/scripts/resolve-version.sh` (the only place the version → platforms table lives).

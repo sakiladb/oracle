@@ -151,6 +151,8 @@ jobs:
       # Every run: build this version for this platform into the local Docker
       # daemon, then smoke-test it, before anything is pushed. On a release the
       # push step below reuses this builder's cache, so it doesn't rebuild.
+      # Keep its context / platforms / build-args / provenance identical to
+      # "Build and push by digest", or the pushed image isn't the tested one.
       - name: Build (load for smoke test)
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
         with:
@@ -164,11 +166,13 @@ jobs:
           cache-from: type=gha,scope=${{ env.PLATFORM_PAIR }}
           cache-to: type=gha,mode=max,scope=${{ env.PLATFORM_PAIR }}
 
-      # Run the image and check the Sakila contract: counts, the staff.picture
-      # BLOB, and view output against testdata/view-hashes.txt.
+      # Run the image and check the Sakila contract: the Oracle major it actually
+      # runs, counts, the staff.picture BLOB, and view output against
+      # testdata/view-hashes.txt.
       - name: Smoke test
         env:
           IMAGE: sakila-ci:${{ matrix.version }}
+          SMOKE_EXPECT_MAJOR: ${{ matrix.version }}
         run: ./smoke-test.sh "$IMAGE"
 
       # Tag push: build and push by digest to both registries. Pushing by

@@ -163,7 +163,8 @@ for each of its architectures (QEMU is not faithful enough for Oracle's PMON to 
 
 **Why 21c?** Most Oracle users run 19c, the long-term release, but 19c has no free edition, so it can't
 be published as a public image. 21c is the closest version that can be: like 19c, it lacks the 23ai
-features that most often cause version differences (`VECTOR`, `BOOLEAN`, native `JSON`). Treat
+features that most often cause version differences (`VECTOR`, SQL `BOOLEAN`). One difference to know:
+21c added a native `JSON` data type, which 19c doesn't have. Treat
 `:21` as a stand-in for 19c, not a target in its own right: 21c is an Innovation Release, 21.3.0 is
 the final XE release, and Oracle's patching for it ended in April 2025. It's `amd64` only, because
 the XE base image is.

@@ -9,6 +9,7 @@
 # each view's full output hashes to the committed testdata/view-hashes.txt
 # (shared by every Oracle version, so 21c and 23ai must return identical view
 # output). SMOKE_TIMEOUT (default 300) bounds the wait for `healthy`.
+# SMOKE_EXPECT_MAJOR (e.g. 21), if set, also checks the running Oracle major.
 #
 # Runs its own uniquely named container with no published ports, and removes
 # it on exit. Used by CI for every image, and by `make test`.
@@ -106,6 +107,12 @@ while :; do
 done
 echo "smoke-test: healthy after $((SECONDS - start))s"
 
+# Every other check is version-agnostic, so without this a build that silently
+# ignored ORACLE_MAJOR (and built the default 23) would pass as "21".
+if [ -n "${SMOKE_EXPECT_MAJOR:-}" ]; then
+  check oracle_major "$SMOKE_EXPECT_MAJOR" \
+    "SELECT REGEXP_SUBSTR(version, '^[0-9]+') FROM product_component_version WHERE ROWNUM = 1;"
+fi
 check tables              16    "SELECT COUNT(*) FROM user_tables;"
 check views               7     "SELECT COUNT(*) FROM user_views;"
 check actor               200   "SELECT COUNT(*) FROM actor;"
