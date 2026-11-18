@@ -21,7 +21,17 @@ SET DEFINE OFF
 SET ECHO ON
 SET FEEDBACK ON
 @/sakila/1-oracle-sakila-schema.sql
+-- Quiet the data load. Echoing its ~46k rows (and a "rows created" line per
+-- INSERT) overruns BuildKit's 2 MiB per-step log cap, which then clips
+-- everything after it - including any error from the finalize row-count
+-- tripwire. Errors here are still reported (ORA-, line, and offending text).
+SET ECHO OFF
+SET FEEDBACK OFF
+PROMPT CONTAINER: loading Sakila data (echo off)...
 @/sakila/2-oracle-sakila-data.sql
+PROMPT CONTAINER: Sakila data loaded.
+SET ECHO ON
+SET FEEDBACK ON
 @/sakila/3-oracle-sakila-finalize.sql
 EXIT
 EOF
