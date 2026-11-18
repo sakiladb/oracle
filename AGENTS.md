@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-Maintainer guide for **`sakiladb/oracle`** — Oracle Database Docker images (23ai Free as `:23`, and
+Guide for maintainers and coding agents working on **`sakiladb/oracle`** — Oracle Database Docker images (23ai Free as `:23`, and
 21c XE as `:21`, a 19c stand-in; see [Versions and base images](#versions-and-base-images)) preloaded with
 the [Sakila](https://dev.mysql.com/doc/sakila/en/) sample database (hand-ported from the MySQL Sakila
 via [jOOQ](https://www.jooq.org/sakila)), published to
@@ -94,6 +94,12 @@ silently drifted the engine across rebuilds). The tags are literal in the `Docke
 stage's tag**; the published Docker tag stays the major. 21.3.0 is the final 21c XE release, so the 21
 pin won't move. Build locally with `make build` (23) or `make build ORACLE_MAJOR=21` (amd64 hosts
 only: Oracle doesn't run under emulation).
+
+**23ai vs 26ai.** Oracle has renamed 23ai to *Oracle AI Database 26ai* but kept the 23 version
+number: `23.26.2` is major 23, release update 26.2. So the `:23` image's banner reads
+`Oracle AI Database 26ai Free Release 23.26.2.0.0`. Tags follow the version number, not the
+marketing name: it stays `:23` (and `v23.x.y`), and there is no `:26`. These docs say "23ai"
+throughout.
 
 **21 is a 19c stand-in.** 19c is what most Oracle users run, but it has no free edition. 21c is the
 closest version that can be published, and like 19c it lacks 23ai's `VECTOR` and SQL `BOOLEAN`. (It

@@ -23,6 +23,10 @@ to `23.26.2-slim-faststart`), and the 21 image on
 Both have the Oracle data directory pre-baked, so the database is ready to query within seconds of
 container start, with no initialization step.
 
+Oracle has renamed 23ai to **Oracle AI Database 26ai**, but kept the 23 version number (`23.26.x` is
+23ai, release update 26), so the `:23` image's version banner says "26ai". The Docker tag follows
+the version number, not the marketing name: there is no `:26` tag.
+
 The image declares a Docker
 [`HEALTHCHECK`](https://docs.docker.com/reference/dockerfile/#healthcheck), so you can wait for
 readiness rather than guessing. Its status becomes `healthy` once the `SAKILA` pluggable database is
@@ -177,7 +181,7 @@ identical output on each version.
 Maintainers: releases are tag-driven. Pushing a semver tag `vN.x.y` builds and publishes that Oracle
 major version (`v21.0.0` publishes `:21`). To build the image locally, run `make build` (23), or
 `make build ORACLE_MAJOR=21` (21, on an `amd64` host only); `make test` smoke-tests the result and
-`make help` lists all targets. See [CLAUDE.md](./CLAUDE.md) for the full, repeatable procedure.
+`make help` lists all targets. See [AGENTS.md](./AGENTS.md) for the full, repeatable procedure.
 
 ## Verifying a pulled image
 
