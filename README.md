@@ -1,7 +1,7 @@
 # sakiladb/oracle
 
-An Oracle Database 23ai Docker image preloaded with the [Sakila](https://dev.mysql.com/doc/sakila/en/)
-sample database (hand-ported via [jOOQ](https://www.jooq.org/sakila)). One of the
+Oracle Database Docker images (23ai and 21c) preloaded with the
+[Sakila](https://dev.mysql.com/doc/sakila/en/) sample database (hand-ported via [jOOQ](https://www.jooq.org/sakila)). One of the
 [`sakiladb`](https://github.com/sakiladb) image family.
 
 These images exist primarily as test fixtures for [`sq`](https://github.com/neilotoole/sq), a
@@ -17,9 +17,15 @@ Available on [Docker Hub](https://hub.docker.com/r/sakiladb/oracle) and
 docker run -p 1521:1521 -d sakiladb/oracle:latest
 ```
 
-The image is built on [`gvenzl/oracle-free`](https://hub.docker.com/r/gvenzl/oracle-free) (pinned to
-`23.26.2-slim-faststart`) with the Oracle data directory pre-baked, so the database is ready to query
-within seconds of container start, with no initialization step.
+The 23 image is built on [`gvenzl/oracle-free`](https://hub.docker.com/r/gvenzl/oracle-free) (pinned
+to `23.26.2-slim-faststart`), and the 21 image on
+[`gvenzl/oracle-xe`](https://hub.docker.com/r/gvenzl/oracle-xe) (pinned to `21.3.0-slim-faststart`).
+Both have the Oracle data directory pre-baked, so the database is ready to query within seconds of
+container start, with no initialization step.
+
+Oracle has renamed 23ai to **Oracle AI Database 26ai**, but kept the 23 version number (`23.26.x` is
+23ai, release update 26), so the `:23` image's version banner says "26ai". The Docker tag follows
+the version number, not the marketing name: there is no `:26` tag.
 
 The image declares a Docker
 [`HEALTHCHECK`](https://docs.docker.com/reference/dockerfile/#healthcheck), so you can wait for
@@ -145,6 +151,7 @@ Each Oracle major version is published as its own image tag. `latest` tracks the
 | Oracle | sakiladb Release | Architecture     | Docker Hub                                                                                              | GitHub Container Registry                                                                                                              |
 |--------|------------------|------------------|--------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------|
 | 23     | `v23.0.7`        | `amd64`, `arm64` | [`sakiladb/oracle:23`](https://hub.docker.com/r/sakiladb/oracle), [`:latest`](https://hub.docker.com/r/sakiladb/oracle) | [`ghcr.io/sakiladb/oracle:23`](https://github.com/sakiladb/oracle/pkgs/container/oracle), [`:latest`](https://github.com/sakiladb/oracle/pkgs/container/oracle) |
+| 21     | `v21.0.0`        | `amd64`          | [`sakiladb/oracle:21`](https://hub.docker.com/r/sakiladb/oracle) | [`ghcr.io/sakiladb/oracle:21`](https://github.com/sakiladb/oracle/pkgs/container/oracle) |
 
 The image tag tracks the **Oracle major version** (matching `sakiladb/postgres:15`, `sakiladb/mysql:8`,
 …). **sakiladb Release** is the git tag the current image was built from (see
@@ -153,16 +160,28 @@ with the **major** tracking Oracle and the **minor**/**patch** tracking sakiladb
 successive `v23.x.y` releases all surface as `:23`). Every version is published to both
 [Docker Hub](https://hub.docker.com/r/sakiladb/oracle) and
 [GitHub Container Registry](https://github.com/sakiladb/oracle/pkgs/container/oracle), built natively
-for both arches (QEMU is not faithful enough for Oracle's PMON to start), and signed with
+for each of its architectures (QEMU is not faithful enough for Oracle's PMON to start), and signed with
 [cosign](https://github.com/sigstore/cosign). Each image also carries
 [SLSA build provenance](https://slsa.dev/) and an SPDX [SBOM](https://spdx.dev/) attestation
 (verify with `gh attestation verify`).
 
+**Why 21c?** Most Oracle users run 19c, the long-term release, but 19c has no free edition, so it can't
+be published as a public image. 21c is the closest version that can be: like 19c, it lacks the 23ai
+features that most often cause version differences (`VECTOR`, SQL `BOOLEAN`). One difference to know:
+21c added a native `JSON` data type, which 19c doesn't have. Treat
+`:21` as a stand-in for 19c, not a target in its own right: 21c is an Innovation Release, 21.3.0 is
+the final XE release, and Oracle's patching for it ended in April 2025. It's `amd64` only, because
+the XE base image is.
+
+Both images serve the same Sakila dataset, and CI checks on every build that all 7 views return
+identical output on each version.
+
 ## Releasing a new version
 
 Maintainers: releases are tag-driven. Pushing a semver tag `vN.x.y` builds and publishes that Oracle
-major version. To build the image locally, run `make build` (`make help` lists all targets). See
-[CLAUDE.md](./CLAUDE.md) for the full, repeatable procedure.
+major version (`v21.0.0` publishes `:21`). To build the image locally, run `make build` (23), or
+`make build ORACLE_MAJOR=21` (21, on an `amd64` host only); `make test` smoke-tests the result and
+`make help` lists all targets. See [AGENTS.md](./AGENTS.md) for the full, repeatable procedure.
 
 ## Verifying a pulled image
 
@@ -180,6 +199,17 @@ A successful verification confirms the image was built from this repository's wo
 and has not been tampered with in transit.
 
 ## Changelog
+
+### 2026-11-17
+
+- **Added Oracle 21c** (`v21.0.0`): `sakiladb/oracle:21`, built on Oracle Database 21c Express
+  Edition (`gvenzl/oracle-xe:21.3.0-slim-faststart`), `amd64` only, as a stand-in for 19c (see
+  [Available versions](#available-versions)). Same Sakila dataset, same 16 tables + 7 views, and
+  identical view output to the 23 image. `:latest` stays on 23.
+- **Rebuilt the 23 image** (`v23.0.8`) from a data file both versions accept: one `INSERT` per row
+  (21c has no multi-row `VALUES`), and smaller `staff.picture` chunks (21c's SQL\*Plus limits script
+  lines to 3000 characters). The loaded data is unchanged, and the build is faster. Every image is
+  now smoke-tested in CI before it is published.
 
 ### 2026-06-30
 

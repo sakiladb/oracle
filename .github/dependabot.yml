@@ -16,9 +16,9 @@ updates:
           - minor
           - patch
 
-  # Track the pinned gvenzl base image in the Dockerfile (now an exact version
-  # via ARG ORACLE_VERSION, not the floating slim-faststart tag) so base bumps
-  # arrive as reviewable PRs.
+  # Track the pinned gvenzl base images in the Dockerfile (one literal
+  # `FROM <image>:<exact tag> AS base-NN` per Oracle major, not a floating
+  # slim-faststart tag) so base bumps arrive as reviewable PRs.
   - package-ecosystem: docker
     directory: /
     schedule:

@@ -9,19 +9,26 @@
 #
 # Pattern mirrors postgres/Dockerfile and clickhouse/Dockerfile in this org.
 
-# Pin the gvenzl base to an exact Oracle Free version instead of the floating
-# `slim-faststart` tag, so rebuilds are reproducible — the published image no
-# longer silently drifts to whatever is newest at build time (see #5). oracle
-# publishes a single major, so the release workflow does not override this;
-# Dependabot / maintainers bump the default. Used in both build stages below.
-ARG ORACLE_VERSION=23.26.2
+# Oracle major to build: 23 (default, Oracle Database 23ai Free) or 21 (Oracle
+# Database 21c XE, amd64 only). The release workflow sets it from the git tag
+# (v21.0.0 -> 21); a plain `docker build .` builds 23.
+ARG ORACLE_MAJOR=23
 
-FROM gvenzl/oracle-free:${ORACLE_VERSION}-slim-faststart AS builder
+# One base stage per Oracle major, each pinned to an exact gvenzl release
+# instead of a floating tag, so rebuilds are reproducible (see #5). The tags are
+# literal so Dependabot can read and bump them. BuildKit pulls only the stage
+# that ORACLE_MAJOR selects below. To add a version, add a stage here and a row
+# in .github/scripts/resolve-version.sh.
+FROM gvenzl/oracle-free:23.26.2-slim-faststart AS base-23
+FROM gvenzl/oracle-xe:21.3.0-slim-faststart   AS base-21
+
+FROM base-${ORACLE_MAJOR} AS builder
 
 # ORACLE_DATABASE=SAKILA tells gvenzl's entrypoint to clone an extra PDB
 # named SAKILA from PDB$SEED at first init and create APP_USER inside it.
 # init-as-sakila.sh then loads the schema/data into SAKILA and drops the
-# now-empty default FREEPDB1 to keep the image lean.
+# now-empty default PDB (FREEPDB1 on 23ai Free, XEPDB1 on 21c XE) to keep the
+# image lean.
 ENV ORACLE_PASSWORD=p_ssW0rd \
     APP_USER=sakila \
     APP_USER_PASSWORD=p_ssW0rd \
@@ -29,7 +36,7 @@ ENV ORACLE_PASSWORD=p_ssW0rd \
 
 # SQL files live outside /container-entrypoint-initdb.d/ because gvenzl's
 # initdb runner executes *.sql there as SYSDBA against the CDB. Our schema
-# and data must be owned by the sakila app user inside FREEPDB1, so the
+# and data must be owned by the sakila app user inside the SAKILA PDB, so the
 # init-as-sakila.sh shim opens its own sqlplus session as APP_USER.
 COPY --chown=oracle:oinstall ./1-oracle-sakila-schema.sql   /sakila/
 COPY --chown=oracle:oinstall ./2-oracle-sakila-data.sql     /sakila/
@@ -43,23 +50,23 @@ COPY --chown=oracle:oinstall --chmod=755 ./init-as-sakila.sh \
 RUN /opt/oracle/container-entrypoint.sh --nowait
 
 # ---------------------------------------------------------------------------
-FROM gvenzl/oracle-free:${ORACLE_VERSION}-slim-faststart
+FROM base-${ORACLE_MAJOR}
 
 # Replace the empty seed data directory with our pre-loaded one. The presence
-# of /opt/oracle/oradata/dbconfig/FREE/ tells gvenzl's entrypoint that the
-# DB is already initialized, so it skips create_dbconfig() and starts straight
-# into the pre-loaded database.
+# of /opt/oracle/oradata/dbconfig/<SID>/ (FREE on 23ai, XE on 21c) tells
+# gvenzl's entrypoint that the DB is already initialized, so it skips
+# create_dbconfig() and starts straight into the pre-loaded database.
 RUN rm -rf /opt/oracle/oradata
 COPY --chown=oracle:oinstall --from=builder /opt/oracle/oradata /opt/oracle/oradata
 
 EXPOSE 1521
 
 # Readiness probe. The gvenzl base ships /opt/oracle/healthcheck.sh but does
-# not wire it as a HEALTHCHECK, and it defaults to the FREEPDB1 PDB — which
-# this image drops (only SAKILA remains). Pass SAKILA explicitly so the probe
-# reports `healthy` once the SAKILA PDB is open and the baked schema is
-# queryable. Oracle's PDB-open settle is slow, so allow a generous grace
-# period before failures count.
+# not wire it as a HEALTHCHECK, and it defaults to the base's default PDB
+# (FREEPDB1 or XEPDB1) — which this image drops (only SAKILA remains). Pass
+# SAKILA explicitly so the probe reports `healthy` once the SAKILA PDB is open
+# and the baked schema is queryable. Oracle's PDB-open settle is slow, so allow
+# a generous grace period before failures count.
 HEALTHCHECK --start-period=90s --interval=10s --timeout=10s --retries=12 \
   CMD ["/opt/oracle/healthcheck.sh", "SAKILA"]
 
