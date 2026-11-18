@@ -2,12 +2,13 @@
 # Decide which Oracle versions and platforms a CI run builds. Prints
 # GITHUB_OUTPUT lines (version=, is_latest=, matrix=) on stdout.
 #
-# Env: REF_TYPE, REF_NAME (github.ref_type / ref_name), INPUT_VERSION
-# (workflow_dispatch input, may be empty), LATEST_VERSION.
+# Env: EVENT_NAME, REF_TYPE, REF_NAME (github.event_name / ref_type / ref_name),
+# INPUT_VERSION (workflow_dispatch input, may be empty), LATEST_VERSION.
 #
 #   INPUT_VERSION set -> that version only
 #   tag push          -> the tag's major (v21.0.0 -> 21); the only case that publishes
-#   anything else     -> every known version (PRs and branch pushes build them all)
+#   anything else     -> every known version (PRs, branch pushes, and a manual run
+#                        with a blank input, even one started on a tag ref)
 #
 # version= is empty when every version is built. This is the one place the
 # version -> platforms table lives; the Dockerfile has a matching base-NN stage
@@ -41,7 +42,7 @@ is_known() {
 version=""
 if [ -n "${INPUT_VERSION:-}" ]; then
   version="$INPUT_VERSION"
-elif [ "${REF_TYPE:-}" = "tag" ]; then
+elif [ "${EVENT_NAME:?EVENT_NAME is required}" = "push" ] && [ "${REF_TYPE:-}" = "tag" ]; then
   version="${REF_NAME#v}"   # v21.0.0 -> 21.0.0
   version="${version%%.*}"  # 21.0.0  -> 21
 fi

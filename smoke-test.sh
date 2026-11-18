@@ -123,6 +123,11 @@ check staff_1_picture_len 36365 "SELECT DBMS_LOB.GETLENGTH(picture) FROM staff W
 check staff_2_picture_null 1    "SELECT COUNT(*) FROM staff WHERE staff_id = 2 AND picture IS NULL;"
 
 if (( update )); then
+  # Never replace the shared baseline with hashes from an image that failed
+  # its contract checks.
+  if (( failures )); then
+    die "${failures} check(s) failed; not updating ${hashes}"
+  fi
   mkdir -p "$(dirname "$hashes")"
   out=""
   for v in "${views[@]}"; do
