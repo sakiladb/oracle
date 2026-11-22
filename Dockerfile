@@ -19,7 +19,7 @@ ARG ORACLE_MAJOR=23
 # literal so Dependabot can read and bump them. BuildKit pulls only the stage
 # that ORACLE_MAJOR selects below. To add a version, add a stage here and a row
 # in .github/scripts/resolve-version.sh.
-FROM gvenzl/oracle-free:23.26.2-slim-faststart AS base-23
+FROM gvenzl/oracle-free:23.26.4-slim-faststart AS base-23
 FROM gvenzl/oracle-xe:21.3.0-slim-faststart   AS base-21
 
 FROM base-${ORACLE_MAJOR} AS builder
